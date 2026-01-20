@@ -2,8 +2,10 @@
 FastAPI Main Application
 Trading Bot API Server
 """
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from app.config import settings
 from app.api.routes import stocks, signals, backtest, indicators, screener, alerts, news, chat, ipo, ai, market
 from app.api.routes import auth, portfolio
@@ -19,6 +21,7 @@ from app.utils.logger import logger
 from datetime import datetime, timezone
 import asyncio
 import json
+import traceback
 
 # Create FastAPI app
 app = FastAPI(
@@ -28,6 +31,30 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Global Exception Handlers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions"""
+    logger.error(f"Global exception handler caught: {type(exc).__name__}: {str(exc)}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": f"Internal server error: {str(exc)}",
+            "type": type(exc).__name__,
+            "path": str(request.url)
+        }
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors"""
+    logger.warning(f"Validation error: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()}
+    )
 
 # Configure CORS
 app.add_middleware(

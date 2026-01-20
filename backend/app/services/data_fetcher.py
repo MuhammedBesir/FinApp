@@ -127,11 +127,11 @@ class DataFetcher:
             
             # Handle None return from yfinance
             if df is None:
-                logger.warning(f"yfinance returned None for {ticker}")
+                logger.warning(f"yfinance returned None for {ticker} - API may be unavailable")
                 return pd.DataFrame()
                 
             if df.empty:
-                logger.warning(f"No data returned for {ticker}")
+                logger.warning(f"No data returned for {ticker} - symbol may be invalid or market closed")
                 return pd.DataFrame()
             
             # Clean column names - check if columns exist
@@ -148,7 +148,9 @@ class DataFetcher:
             return df
             
         except Exception as e:
-            logger.error(f"Error fetching real-time data for {ticker}: {e}")
+            logger.error(f"Error fetching real-time data for {ticker}: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
             return pd.DataFrame()
     
     def fetch_historical_data(
