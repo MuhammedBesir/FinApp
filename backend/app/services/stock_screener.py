@@ -10,6 +10,8 @@ import pytz
 from app.services.data_fetcher import DataFetcher
 from app.services.technical_analysis import TechnicalAnalysis
 from app.utils.logger import logger
+import concurrent.futures
+
 
 
 class StockScreener:
@@ -553,47 +555,57 @@ class StockScreener:
             'sector': atr_levels['sector']
         }
     
+    def _process_stock_for_screening(self, ticker: str, interval: str, period: str) -> Optional[Dict[str, Any]]:
+        """Helper method to process a single stock for screening"""
+        try:
+            # Fetch data
+            df = self.data_fetcher.fetch_realtime_data(ticker, interval, period)
+            
+            if df.empty or len(df) < 50:
+                return None
+            
+            # Calculate indicators
+            df_with_indicators = self.tech_analysis.calculate_all_indicators(df)
+            indicators = self.tech_analysis.get_latest_indicators(df_with_indicators)
+            
+            # Calculate hybrid score
+            score_data = self.calculate_hybrid_score(ticker, df, indicators)
+            
+            # Calculate ATR-based entry/exit levels (adaptive per stock)
+            levels = self.calculate_entry_exit_levels(ticker, df, score_data)
+            
+            # Get volatility profile for this stock
+            vol_profile = self.get_stock_volatility_profile(ticker)
+            
+            # Combine results
+            return {
+                **score_data,
+                'levels': levels,
+                'sector': vol_profile['sector'],
+                'volatility_profile': vol_profile,
+                'timestamp': str(df.index[-1])
+            }
+        except Exception as e:
+            logger.error(f"Error screening {ticker}: {e}")
+            return None
+
     def screen_all_stocks(self, interval: str = '1h', period: str = '1mo') -> List[Dict[str, Any]]:
-        """Scan all BIST30 for bounce setups with ATR-based adaptive parameters"""
+        """Scan all BIST30 for bounce setups with ATR-based adaptive parameters (PARALLELIZED)"""
         logger.info("Screening for bounce setups with ATR-adaptive parameters")
         results = []
         
-        for ticker in self.bist30_tickers:
-            try:
-                # Fetch data
-                df = self.data_fetcher.fetch_realtime_data(ticker, interval, period)
-                
-                if df.empty or len(df) < 50:
-                    logger.warning(f"Insufficient data for {ticker}")
-                    continue
-                
-                # Calculate indicators
-                df_with_indicators = self.tech_analysis.calculate_all_indicators(df)
-                indicators = self.tech_analysis.get_latest_indicators(df_with_indicators)
-                
-                # Calculate hybrid score
-                score_data = self.calculate_hybrid_score(ticker, df, indicators)
-                
-                # Calculate ATR-based entry/exit levels (adaptive per stock)
-                levels = self.calculate_entry_exit_levels(ticker, df, score_data)
-                
-                # Get volatility profile for this stock
-                vol_profile = self.get_stock_volatility_profile(ticker)
-                
-                # Combine results
-                result = {
-                    **score_data,
-                    'levels': levels,
-                    'sector': vol_profile['sector'],
-                    'volatility_profile': vol_profile,
-                    'timestamp': str(df.index[-1])
-                }
-                
-                results.append(result)
-                
-            except Exception as e:
-                logger.error(f"Error screening {ticker}: {e}")
-                continue
+        # Use ThreadPoolExecutor for parallel processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Create a list of futures
+            future_to_ticker = {
+                executor.submit(self._process_stock_for_screening, ticker, interval, period): ticker 
+                for ticker in self.bist30_tickers
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_ticker):
+                result = future.result()
+                if result:
+                    results.append(result)
         
         # Sort by score
         results.sort(key=lambda x: x['score'], reverse=True)
@@ -960,60 +972,81 @@ class StockScreener:
         """
         logger.info(f"Getting top movers (top {top_n})")
         
+    def _process_ticker_for_mover(self, ticker: str) -> Optional[Dict[str, Any]]:
+        """Helper method to process a single ticker for top movers"""
+        try:
+            # Günlük veri çek
+            df = self.data_fetcher.fetch_realtime_data(ticker, interval='1d', period='5d')
+            
+            if df.empty or len(df) < 2:
+                return None
+            
+            # Bugünün verisi
+            today = df.iloc[-1]
+            yesterday = df.iloc[-2]
+            
+            current_price = float(today['close'])
+            prev_close = float(yesterday['close'])
+            open_price = float(today['open'])
+            high = float(today['high'])
+            low = float(today['low'])
+            volume = float(today['volume'])
+            
+            # Günlük değişim hesapla
+            change = current_price - prev_close
+            change_percent = ((current_price - prev_close) / prev_close) * 100
+            
+            # Gün içi range
+            day_range = high - low
+            day_range_pct = (day_range / low) * 100 if low > 0 else 0
+            
+            # Hacim ortalaması (son 5 gün)
+            avg_volume = df['volume'].tail(5).mean()
+            volume_ratio = volume / avg_volume if avg_volume > 0 else 1
+            
+            sector = self.STOCK_SECTORS.get(ticker, 'Diğer')
+            
+            return {
+                'ticker': ticker,
+                'symbol': ticker.replace('.IS', ''),
+                'sector': sector,
+                'price': round(current_price, 2),
+                'change': round(change, 2),
+                'change_percent': round(change_percent, 2),
+                'open': round(open_price, 2),
+                'high': round(high, 2),
+                'low': round(low, 2),
+                'volume': int(volume),
+                'volume_ratio': round(volume_ratio, 2),
+                'day_range_pct': round(day_range_pct, 2),
+                'prev_close': round(prev_close, 2)
+            }
+        except Exception as e:
+            logger.warning(f"Error getting data for {ticker}: {e}")
+            return None
+
+    def get_top_movers(self, top_n: int = 5) -> Dict[str, Any]:
+        """
+        🔥 EN ÇOK HAREKET EDEN HİSSELER - Günlük
+        PARALLEL PROCESSING with ThreadPoolExecutor
+        """
+        logger.info(f"Getting top movers (top {top_n}) - Parallel Execution")
+        
         movers = []
         
-        for ticker in self.bist30_tickers:
-            try:
-                # Günlük veri çek
-                df = self.data_fetcher.fetch_realtime_data(ticker, interval='1d', period='5d')
-                
-                if df.empty or len(df) < 2:
-                    continue
-                
-                # Bugünün verisi
-                today = df.iloc[-1]
-                yesterday = df.iloc[-2]
-                
-                current_price = float(today['close'])
-                prev_close = float(yesterday['close'])
-                open_price = float(today['open'])
-                high = float(today['high'])
-                low = float(today['low'])
-                volume = float(today['volume'])
-                
-                # Günlük değişim hesapla
-                change = current_price - prev_close
-                change_percent = ((current_price - prev_close) / prev_close) * 100
-                
-                # Gün içi range
-                day_range = high - low
-                day_range_pct = (day_range / low) * 100 if low > 0 else 0
-                
-                # Hacim ortalaması (son 5 gün)
-                avg_volume = df['volume'].tail(5).mean()
-                volume_ratio = volume / avg_volume if avg_volume > 0 else 1
-                
-                sector = self.STOCK_SECTORS.get(ticker, 'Diğer')
-                
-                movers.append({
-                    'ticker': ticker,
-                    'symbol': ticker.replace('.IS', ''),
-                    'sector': sector,
-                    'price': round(current_price, 2),
-                    'change': round(change, 2),
-                    'change_percent': round(change_percent, 2),
-                    'open': round(open_price, 2),
-                    'high': round(high, 2),
-                    'low': round(low, 2),
-                    'volume': int(volume),
-                    'volume_ratio': round(volume_ratio, 2),
-                    'day_range_pct': round(day_range_pct, 2),
-                    'prev_close': round(prev_close, 2)
-                })
-                
-            except Exception as e:
-                logger.warning(f"Error getting data for {ticker}: {e}")
-                continue
+        # Use ThreadPoolExecutor to fetch data in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all tasks
+            future_to_ticker = {
+                executor.submit(self._process_ticker_for_mover, ticker): ticker 
+                for ticker in self.bist30_tickers
+            }
+            
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(future_to_ticker):
+                result = future.result()
+                if result:
+                    movers.append(result)
         
         if not movers:
             return {
