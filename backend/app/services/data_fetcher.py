@@ -126,12 +126,17 @@ class DataFetcher:
             df = stock.history(period=period, interval=interval)
             
             # Handle None return from yfinance
-            if df is None or df.empty:
+            if df is None:
+                logger.warning(f"yfinance returned None for {ticker}")
+                return pd.DataFrame()
+                
+            if df.empty:
                 logger.warning(f"No data returned for {ticker}")
                 return pd.DataFrame()
             
-            # Clean column names
-            df.columns = df.columns.str.lower()
+            # Clean column names - check if columns exist
+            if hasattr(df, 'columns') and len(df.columns) > 0:
+                df.columns = df.columns.str.lower()
             
             # Cache the data
             self.cache[cache_key] = {
@@ -170,12 +175,17 @@ class DataFetcher:
             df = stock.history(start=start_date, end=end_date)
             
             # Handle None return from yfinance
-            if df is None or df.empty:
+            if df is None:
+                logger.warning(f"yfinance returned None for {ticker}")
+                return pd.DataFrame()
+                
+            if df.empty:
                 logger.warning(f"No historical data returned for {ticker}")
                 return pd.DataFrame()
             
-            # Clean column names
-            df.columns = df.columns.str.lower()
+            # Clean column names - check if columns exist
+            if hasattr(df, 'columns') and len(df.columns) > 0:
+                df.columns = df.columns.str.lower()
             
             logger.info(f"Successfully fetched {len(df)} historical data points for {ticker}")
             return df
