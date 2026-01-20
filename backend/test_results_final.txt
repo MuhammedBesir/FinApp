@@ -1,0 +1,63 @@
+
+======================================================================
+🚀 BACKTEST v3 - WIN RATE BOOSTER ACTIVE!
+======================================================================
+📅 Test Süresi: 90 gün
+📊 Max Picks: 3 (sektör çeşitlendirmeli)
+🎯 Min Score: 65+ (booster ile yükseltildi)
+⛔ Stop-Loss: Teknik (dinamik)
+🎯 Targets: 1:2.2 & 1:3.5 R/R (dinamik)
+📉 Partial Exit: TP1'de %50 pozisyon
+🔥 BOOSTER: Candlestick + S/R + Momentum
+🎯 HEDEF: %75-80 Win Rate
+======================================================================
+
+📥 Veri çekiliyor (15 hisse)...
+✅ 15 hisse yüklendi
+
+📅 İşlem günü: 1/90📅 İşlem günü: 2/90📅 İşlem günü: 3/90📅 İşlem günü: 4/90📅 İşlem günü: 5/90📅 İşlem günü: 6/90📅 İşlem günü: 7/90📅 İşlem günü: 8/90📅 İşlem günü: 9/90📅 İşlem günü: 10/90📅 İşlem günü: 11/90📅 İşlem günü: 12/90📅 İşlem günü: 13/90📅 İşlem günü: 14/90📅 İşlem günü: 15/90📅 İşlem günü: 16/90📅 İşlem günü: 17/90📅 İşlem günü: 18/90📅 İşlem günü: 19/90📅 İşlem günü: 20/90📅 İşlem günü: 21/90📅 İşlem günü: 22/90📅 İşlem günü: 23/90📅 İşlem günü: 24/90📅 İşlem günü: 25/90📅 İşlem günü: 26/90📅 İşlem günü: 27/90📅 İşlem günü: 28/90📅 İşlem günü: 29/90📅 İşlem günü: 30/90📅 İşlem günü: 31/90📅 İşlem günü: 32/90📅 İşlem günü: 33/90📅 İşlem günü: 34/90📅 İşlem günü: 35/90📅 İşlem günü: 36/90📅 İşlem günü: 37/90📅 İşlem günü: 38/90📅 İşlem günü: 39/90📅 İşlem günü: 40/90📅 İşlem günü: 41/90📅 İşlem günü: 42/90📅 İşlem günü: 43/90📅 İşlem günü: 44/90📅 İşlem günü: 45/90📅 İşlem günü: 46/90📅 İşlem günü: 47/90📅 İşlem günü: 48/90📅 İşlem günü: 49/90📅 İşlem günü: 50/90📅 İşlem günü: 51/90📅 İşlem günü: 52/90📅 İşlem günü: 53/90📅 İşlem günü: 54/90📅 İşlem günü: 55/90📅 İşlem günü: 56/90📅 İşlem günü: 57/90📅 İşlem günü: 58/90📅 İşlem günü: 59/90📅 İşlem günü: 60/90📅 İşlem günü: 61/90📅 İşlem günü: 62/90📅 İşlem günü: 63/90📅 İşlem günü: 64/90📅 İşlem günü: 65/90📅 İşlem günü: 66/90📅 İşlem günü: 67/90📅 İşlem günü: 68/90📅 İşlem günü: 69/90📅 İşlem günü: 70/90📅 İşlem günü: 71/90📅 İşlem günü: 72/90📅 İşlem günü: 73/90📅 İşlem günü: 74/90📅 İşlem günü: 75/90📅 İşlem günü: 76/90📅 İşlem günü: 77/90📅 İşlem günü: 78/90📅 İşlem günü: 79/90📅 İşlem günü: 80/90📅 İşlem günü: 81/90📅 İşlem günü: 82/90📅 İşlem günü: 83/90📅 İşlem günü: 84/90📅 İşlem günü: 85/90📅 İşlem günü: 86/90📅 İşlem günü: 87/90📅 İşlem günü: 88/90📅 İşlem günü: 89/90📅 İşlem günü: 90/90
+
+
+======================================================================
+📊 BACKTEST v3 SONUÇLARI
+======================================================================
+
+📈 GENEL İSTATİSTİKLER:
+   Toplam İşlem: 26
+   Kazanan: 11 | Kaybeden: 15
+   ⭐ Kazanma Oranı: %42.3
+
+💰 KAR/ZARAR:
+   Toplam Getiri: %2.46
+   Ortalama İşlem: %0.09
+   Gross Profit: %35.62
+   Gross Loss: %33.19
+
+📈 PERFORMANS:
+   ⭐ Profit Factor: 1.07
+   Max Drawdown: %22.8
+   Avg Risk/Reward: 1:2.15
+
+📊 ÇIKIŞ NEDENİ ANALİZİ:
+   SL: 15 işlem (%57.7), %-33.2 toplam, %-2.21 ort.
+   TP1+BE: 5 işlem (%19.2), %12.5 toplam, %2.50 ort.
+   TP1+10D: 3 işlem (%11.5), %14.2 toplam, %4.73 ort.
+   10D: 3 işlem (%11.5), %8.9 toplam, %2.98 ort.
+
+======================================================================
+🎯 STRATEJİ DEĞERLENDİRMESİ:
+   ⚠️ İYİLEŞTİRME GEREKLİ - Daha fazla optimizasyon
+======================================================================
+
+📝 SON 10 İŞLEM:
+--------------------------------------------------------------------------------
+   2026-01-06 | SISE.IS  | Skor:145 | R/R:1:2.1 | 🔴 % -2.51 | SL
+   2026-01-07 | KCHOL.IS | Skor:104 | R/R:1:2.2 | 🟢 % +6.25 | TP1+10D
+   2026-01-08 | ISCTR.IS | Skor:78 | R/R:1:2.2 | 🟢 % +0.62 | 10D
+   2026-01-09 | AKBNK.IS | Skor:122 | R/R:1:2.2 | 🟢 % +4.67 | 10D
+   2026-01-09 | FROTO.IS | Skor:111 | R/R:1:2.2 | 🟢 % +2.75 | TP1+BE
+   2026-01-09 | TCELL.IS | Skor:110 | R/R:1:1.8 | 🟢 % +1.87 | TP1+BE
+   2026-01-13 | AKBNK.IS | Skor:112 | R/R:1:2.2 | 🔴 % -2.50 | SL
+   2026-01-13 | TCELL.IS | Skor:107 | R/R:1:2.2 | 🟢 % +5.60 | TP1+10D
+   2026-01-15 | TCELL.IS | Skor:143 | R/R:1:2.2 | 🟢 % +3.66 | 10D
+   2026-01-16 | GARAN.IS | Skor:117 | R/R:1:1.9 | 🟢 % +2.34 | TP1+10D

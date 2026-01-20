@@ -1,0 +1,70 @@
+
+============================================================
+🚀 BACKTEST v2 - GELİŞTİRİLMİŞ STRATEJİ
+============================================================
+📅 Test Süresi: 90 gün
+🎯 Min Score: 75+
+📊 Max Picks: 5 (sektör çeşitlendirmeli)
+⛔ Stop-Loss: Teknik (~%2)
+🎯 Take-Profit: 1:3 R:R (~%6)
+📈 Market Filtresi: BIST100 uptrend
+============================================================
+
+📥 Veri çekiliyor (15 hisse)...
+📥 BIST100 verisi çekiliyor...
+✅ 15 hisse yüklendi
+
+
+============================================================
+📊 BACKTEST v2 SONUÇLARI
+============================================================
+
+📈 GENEL İSTATİSTİKLER:
+   Toplam İşlem: 37
+   Kazanan: 25 | Kaybeden: 12
+   Kazanma Oranı: %67.6
+
+💰 KAR/ZARAR:
+   Toplam Getiri: %31.70
+   Ortalama İşlem: %0.86
+
+📈 PERFORMANS:
+   Profit Factor: 3.04
+   Max Drawdown: %4.5
+
+🛡️ FİLTRE ETKİSİ:
+   Market Filter Blocked: 22 gün
+   No Signal Days: 46 gün
+
+📊 SEKTÖR BAZLI ANALİZ:
+   Diğer: 12 işlem, %8.6 toplam, %0.72 ort.
+   Bankacılık: 10 işlem, %8.5 toplam, %0.85 ort.
+   Havacılık: 3 işlem, %7.5 toplam, %2.49 ort.
+   İnşaat: 4 işlem, %3.8 toplam, %0.96 ort.
+   GYO: 7 işlem, %3.6 toplam, %0.51 ort.
+   Kimya: 1 işlem, %-0.3 toplam, %-0.30 ort.
+
+📊 ÇIKIŞ NEDENİ ANALİZİ:
+   EOD: 32 işlem, %41.5 toplam, %1.30 ort.
+   STOP_LOSS: 5 işlem, %-9.8 toplam, %-1.96 ort.
+
+============================================================
+🎯 STRATEJİ DEĞERLENDİRMESİ:
+   ✅ GÜÇLÜ STRATEJİ - Canlı kullanıma hazır
+
+📊 BENCHMARK (BIST100): %23.39
+📊 ALPHA: %8.31
+============================================================
+
+📝 SON 10 İŞLEM:
+--------------------------------------------------------------------------------
+   2026-01-14 | EKGYO.IS | GYO          | Skor:80 | 🔴 %-1.50 | STOP_LOSS
+   2026-01-14 | ENKAI.IS | İnşaat       | Skor:80 | 🟢 %+1.00 | EOD
+   2026-01-14 | TAVHL.IS | Havacılık    | Skor:80 | 🟢 %+2.39 | EOD
+   2026-01-14 | GARAN.IS | Bankacılık   | Skor:75 | 🔴 %-2.28 | STOP_LOSS
+   2026-01-14 | VAKBN.IS | Diğer        | Skor:75 | 🔴 %-0.76 | EOD
+   2026-01-15 | GARAN.IS | Bankacılık   | Skor:80 | 🔴 %-1.50 | STOP_LOSS
+   2026-01-15 | EKGYO.IS | GYO          | Skor:80 | 🟢 %+7.22 | EOD
+   2026-01-15 | YKBNK.IS | Bankacılık   | Skor:75 | 🟢 %+0.06 | EOD
+   2026-01-16 | GARAN.IS | Bankacılık   | Skor:80 | 🟢 %+2.49 | EOD
+   2026-01-16 | YKBNK.IS | Bankacılık   | Skor:75 | 🟢 %+3.65 | EOD
