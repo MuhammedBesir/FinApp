@@ -125,7 +125,8 @@ class DataFetcher:
             stock = yf.Ticker(ticker)
             df = stock.history(period=period, interval=interval)
             
-            if df.empty:
+            # Handle None return from yfinance
+            if df is None or df.empty:
                 logger.warning(f"No data returned for {ticker}")
                 return pd.DataFrame()
             
@@ -168,7 +169,8 @@ class DataFetcher:
             stock = yf.Ticker(ticker)
             df = stock.history(start=start_date, end=end_date)
             
-            if df.empty:
+            # Handle None return from yfinance
+            if df is None or df.empty:
                 logger.warning(f"No historical data returned for {ticker}")
                 return pd.DataFrame()
             
