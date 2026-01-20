@@ -4,7 +4,7 @@ Trend-following + pullback detection with market filters
 """
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from datetime import datetime, time
 import pytz
 from app.services.data_fetcher import DataFetcher
