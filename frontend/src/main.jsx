@@ -19,10 +19,8 @@ console.log("App Version: 1.0.1 - Env Check:", {
 // Force fix: If we are in production but API_URL is localhost, force it to relative
 if (!window.location.hostname.includes('localhost') && import.meta.env.VITE_API_URL?.includes('localhost')) {
   console.warn("⚠️ Detected localhost API URL in production. Forcing relative path.");
-  axios.defaults.baseURL = '/api';
-} else if (!import.meta.env.VITE_API_URL) {
-  // If undefined, default to relative (for axios instances that don't have it set)
-  axios.defaults.baseURL = '/api';
+  // We do NOT set axios.defaults.baseURL globally to avoid double prefixing (e.g. /api/api/...)
+  // Instead, we rely on individual services to handle the base URL correctly.
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(

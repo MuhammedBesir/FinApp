@@ -100,7 +100,7 @@ class MarketDataService:
             return None
     
     async def get_all_market_data(self) -> Dict:
-        """Tüm piyasa verilerini çek"""
+        """Tüm piyasa verilerini çek (Paralel)"""
         try:
             loop = asyncio.get_event_loop()
 
@@ -115,17 +115,29 @@ class MarketDataService:
                     "error": True,
                 }
 
-            market_data: Dict[str, Dict] = {}
+            # Helper wrappers for exception handling
+            async def fetch_bist_safe(key: str):
+                try:
+                    res = await loop.run_in_executor(None, lambda: self._fetch_bist_index(self.TICKERS[key.upper()]))
+                    return key, res
+                except Exception:
+                    return key, None
 
-            # BIST verilerini çek (executor ile ama sıralı)
-            market_data["bist100"] = await loop.run_in_executor(
-                None, lambda: self._fetch_bist_index(self.TICKERS["BIST100"])
-            )
-            market_data["bist30"] = await loop.run_in_executor(
-                None, lambda: self._fetch_bist_index(self.TICKERS["BIST30"])
-            )
+            async def fetch_yahoo_safe(key: str, ticker: str):
+                try:
+                    res = await loop.run_in_executor(None, lambda: self._fetch_yahoo_price(ticker))
+                    return key, res
+                except Exception:
+                    return key, None
 
-            # Yahoo verilerini sıralı çek (eşzamanlıda cross-pollution oluyor)
+            # Prepare all tasks
+            tasks = []
+            
+            # BIST tasks
+            tasks.append(fetch_bist_safe("bist100"))
+            tasks.append(fetch_bist_safe("bist30"))
+
+            # Yahoo tasks
             yahoo_map = {
                 "usd_try": self.TICKERS["USD_TRY"],
                 "eur_try": self.TICKERS["EUR_TRY"],
@@ -134,14 +146,19 @@ class MarketDataService:
                 "sp500": self.TICKERS["SP500"],
                 "nasdaq": self.TICKERS["NASDAQ"],
             }
-
+            
             for key, ticker in yahoo_map.items():
-                result = await loop.run_in_executor(None, lambda t=ticker: self._fetch_yahoo_price(t))
-                market_data[key] = result if isinstance(result, dict) else _fallback(key)
+                tasks.append(fetch_yahoo_safe(key, ticker))
 
-            # Fallback BIST için de uygulanır
-            for key in ("bist100", "bist30"):
-                if not isinstance(market_data.get(key), dict):
+            # Execute all parallel
+            results = await asyncio.gather(*tasks)
+            
+            # Process results
+            market_data = {}
+            for key, res in results:
+                if isinstance(res, dict):
+                    market_data[key] = res
+                else:
                     market_data[key] = _fallback(key)
 
             self.cache = market_data

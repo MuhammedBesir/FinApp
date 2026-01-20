@@ -23,6 +23,7 @@ const TopMovers = ({ refreshInterval = 60000 }) => {
   const fetchTopMovers = useCallback(async () => {
     try {
       setLoading(true);
+      // Use relative path explicitly, assuming proxy or same-domain handling
       const response = await axios.get(
         "/api/screener/top-movers?top_n=5",
       );

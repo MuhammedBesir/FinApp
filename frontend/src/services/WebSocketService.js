@@ -115,6 +115,14 @@ class AdvancedWebSocketService {
 
     console.log("[WebSocket] Connecting to:", wsUrl);
 
+    // Check for Vercel environment - WebSockets are not supported on Python Serverless
+    if (window.location.hostname.includes('vercel.app')) {
+      console.warn("[WebSocket] Vercel environment detected. WebSockets are disabled (not supported on Serverless).");
+      console.log("[WebSocket] Switching to polling mode is recommended (handled by individual components).");
+      this.isConnected = false;
+      return; // Do not attempt to connect
+    }
+
     try {
       this.ws = new WebSocket(wsUrl);
 
@@ -145,7 +153,7 @@ class AdvancedWebSocketService {
       };
     } catch (error) {
       console.error("[WebSocket] Connection failed:", error);
-      this.attemptReconnect();
+      // Do not reconnect if it failed synchronously, likely invalid URL or environment
     }
   }
 
