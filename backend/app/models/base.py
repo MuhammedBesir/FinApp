@@ -23,31 +23,40 @@ if "neon" in DATABASE_URL.lower() and "sslmode" not in DATABASE_URL:
     DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
 
 # Create engine based on database type
-if DATABASE_URL.startswith("sqlite"):
-    # SQLite - for local development
-    engine = create_engine(
-        DATABASE_URL,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-        echo=settings.log_level.upper() == "DEBUG"
-    )
-    logger.info("Using SQLite database for development")
-else:
-    # PostgreSQL - for production (Neon)
-    engine = create_engine(
-        DATABASE_URL,
-        poolclass=QueuePool,
-        pool_size=settings.database_pool_size,
-        max_overflow=settings.database_max_overflow,
-        pool_timeout=settings.database_pool_timeout,
-        pool_recycle=settings.database_pool_recycle,
-        pool_pre_ping=True,  # Connection health check
-        echo=settings.log_level.upper() == "DEBUG"
-    )
-    logger.info("Using PostgreSQL database for production")
+try:
+    if DATABASE_URL.startswith("sqlite"):
+        # SQLite - for local development
+        engine = create_engine(
+            DATABASE_URL,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=settings.log_level.upper() == "DEBUG"
+        )
+        logger.info("Using SQLite database for development")
+    else:
+        # PostgreSQL - for production (Neon)
+        engine = create_engine(
+            DATABASE_URL,
+            poolclass=QueuePool,
+            pool_size=settings.database_pool_size,
+            max_overflow=settings.database_max_overflow,
+            pool_timeout=settings.database_pool_timeout,
+            pool_recycle=settings.database_pool_recycle,
+            pool_pre_ping=True,  # Connection health check
+            echo=settings.log_level.upper() == "DEBUG"
+        )
+        logger.info("Using PostgreSQL database for production")
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base = declarative_base()
+except Exception as e:
+    import sys, traceback
+    print(f"CRITICAL ERROR during database initialization: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    # Don't exit here, let the app try to start so we see the logs on Vercel
+    SessionLocal = None
+    Base = declarative_base()
+    engine = None
 
 
 def get_db():
