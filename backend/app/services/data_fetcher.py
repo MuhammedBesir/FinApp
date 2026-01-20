@@ -123,11 +123,22 @@ class DataFetcher:
             logger.info(f"Fetching real-time data for {ticker} (interval={interval}, period={period})")
             
             stock = yf.Ticker(ticker)
-            df = stock.history(period=period, interval=interval)
+            
+            # Add timeout and better error handling for yfinance
+            try:
+                df = stock.history(period=period, interval=interval, timeout=10)
+            except TypeError:
+                # Older yfinance versions don't support timeout parameter
+                df = stock.history(period=period, interval=interval)
             
             # Handle None return from yfinance
             if df is None:
                 logger.warning(f"yfinance returned None for {ticker} - API may be unavailable")
+                return pd.DataFrame()
+            
+            # Check if df is actually a DataFrame
+            if not isinstance(df, pd.DataFrame):
+                logger.warning(f"yfinance returned unexpected type {type(df)} for {ticker}")
                 return pd.DataFrame()
                 
             if df.empty:
@@ -135,7 +146,7 @@ class DataFetcher:
                 return pd.DataFrame()
             
             # Clean column names - check if columns exist
-            if hasattr(df, 'columns') and len(df.columns) > 0:
+            if hasattr(df, 'columns') and df.columns is not None and len(df.columns) > 0:
                 df.columns = df.columns.str.lower()
             
             # Cache the data
@@ -174,11 +185,22 @@ class DataFetcher:
             logger.info(f"Fetching historical data for {ticker} from {start_date} to {end_date}")
             
             stock = yf.Ticker(ticker)
-            df = stock.history(start=start_date, end=end_date)
+            
+            # Add timeout and better error handling for yfinance
+            try:
+                df = stock.history(start=start_date, end=end_date, timeout=10)
+            except TypeError:
+                # Older yfinance versions don't support timeout parameter
+                df = stock.history(start=start_date, end=end_date)
             
             # Handle None return from yfinance
             if df is None:
                 logger.warning(f"yfinance returned None for {ticker}")
+                return pd.DataFrame()
+            
+            # Check if df is actually a DataFrame
+            if not isinstance(df, pd.DataFrame):
+                logger.warning(f"yfinance returned unexpected type {type(df)} for {ticker}")
                 return pd.DataFrame()
                 
             if df.empty:
@@ -186,7 +208,7 @@ class DataFetcher:
                 return pd.DataFrame()
             
             # Clean column names - check if columns exist
-            if hasattr(df, 'columns') and len(df.columns) > 0:
+            if hasattr(df, 'columns') and df.columns is not None and len(df.columns) > 0:
                 df.columns = df.columns.str.lower()
             
             logger.info(f"Successfully fetched {len(df)} historical data points for {ticker}")
