@@ -1028,58 +1028,77 @@ class StockScreener:
     def get_top_movers(self, top_n: int = 5) -> Dict[str, Any]:
         """
         🔥 EN ÇOK HAREKET EDEN HİSSELER - Günlük
-        PARALLEL PROCESSING with ThreadPoolExecutor
+        PARALLEL PROCESSING with Safe Fallback
         """
         logger.info(f"Getting top movers (top {top_n}) - Parallel Execution")
         
         movers = []
         
-        # Use ThreadPoolExecutor to fetch data in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            # Submit all tasks
-            future_to_ticker = {
-                executor.submit(self._process_ticker_for_mover, ticker): ticker 
-                for ticker in self.bist30_tickers
+        try:
+            # Use ThreadPoolExecutor to fetch data in parallel
+            # Reduced workers to 5 to prevent OOM on Vercel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                # Submit all tasks
+                future_to_ticker = {
+                    executor.submit(self._process_ticker_for_mover, ticker): ticker 
+                    for ticker in self.bist30_tickers
+                }
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(future_to_ticker):
+                    try:
+                        result = future.result()
+                        if result:
+                            movers.append(result)
+                    except Exception as e:
+                        logger.error(f"Error processing ticker future: {e}")
+
+            if not movers:
+                logger.warning("No movers data found, returning empty success response")
+                return {
+                    'success': True,  # Return success even if empty to prevent 500
+                    'message': 'Veri şu an kullanılamıyor',
+                    'gainers': [],
+                    'losers': [],
+                    'market_sentiment': 'YATAY',
+                    'stats': {'total_stocks': 0},
+                    'timestamp': datetime.now(self.TZ).strftime('%Y-%m-%d %H:%M:%S')
+                }
+            
+            # Değişim yüzdesine göre sırala
+            sorted_movers = sorted(movers, key=lambda x: x['change_percent'], reverse=True)
+            
+            # Top gainers ve losers
+            gainers = [m for m in sorted_movers if m['change_percent'] > 0][:top_n]
+            losers = [m for m in sorted_movers if m['change_percent'] < 0][-top_n:][::-1]
+            
+            # İstatistikler
+            total_positive = len([m for m in movers if m['change_percent'] > 0])
+            total_negative = len([m for m in movers if m['change_percent'] < 0])
+            avg_change = sum(m['change_percent'] for m in movers) / len(movers) if movers else 0
+            
+            return {
+                'success': True,
+                'timestamp': datetime.now(self.TZ).strftime('%Y-%m-%d %H:%M:%S'),
+                'market_sentiment': 'YUKSELIS' if avg_change > 0 else 'DUSUS' if avg_change < 0 else 'YATAY',
+                'stats': {
+                    'total_stocks': len(movers),
+                    'positive': total_positive,
+                    'negative': total_negative,
+                    'unchanged': len(movers) - total_positive - total_negative,
+                    'avg_change': round(avg_change, 2)
+                },
+                'gainers': gainers,
+                'losers': losers
             }
             
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_ticker):
-                result = future.result()
-                if result:
-                    movers.append(result)
-        
-        if not movers:
+        except Exception as e:
+            logger.error(f"Critical error in get_top_movers: {e}")
+            # Fail-safe return to prevent 500
             return {
                 'success': False,
-                'message': 'Veri alınamadı',
+                'message': f'Sistem hatası: {str(e)}',
                 'gainers': [],
                 'losers': [],
                 'timestamp': datetime.now(self.TZ).strftime('%Y-%m-%d %H:%M:%S')
             }
-        
-        # Değişim yüzdesine göre sırala
-        sorted_movers = sorted(movers, key=lambda x: x['change_percent'], reverse=True)
-        
-        # Top gainers (yükselenler) ve losers (düşenler)
-        gainers = [m for m in sorted_movers if m['change_percent'] > 0][:top_n]
-        losers = [m for m in sorted_movers if m['change_percent'] < 0][-top_n:][::-1]  # En çok düşenler
-        
-        # İstatistikler
-        total_positive = len([m for m in movers if m['change_percent'] > 0])
-        total_negative = len([m for m in movers if m['change_percent'] < 0])
-        avg_change = sum(m['change_percent'] for m in movers) / len(movers) if movers else 0
-        
-        return {
-            'success': True,
-            'timestamp': datetime.now(self.TZ).strftime('%Y-%m-%d %H:%M:%S'),
-            'market_sentiment': 'YUKSELIS' if avg_change > 0 else 'DUSUS' if avg_change < 0 else 'YATAY',
-            'stats': {
-                'total_stocks': len(movers),
-                'positive': total_positive,
-                'negative': total_negative,
-                'unchanged': len(movers) - total_positive - total_negative,
-                'avg_change': round(avg_change, 2)
-            },
-            'gainers': gainers,
-            'losers': losers
-        }
