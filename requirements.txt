@@ -18,3 +18,4 @@ psycopg2-binary==2.9.9
 curl_cffi>=0.5.10
 loguru==0.7.2
 aiohttp==3.9.1
+apscheduler==3.10.4
