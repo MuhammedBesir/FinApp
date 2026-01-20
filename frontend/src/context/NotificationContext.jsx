@@ -18,7 +18,7 @@ export const NotificationProvider = ({ children }) => {
   const [stats, setStats] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+  const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
   // Bildirimleri kontrol et
   const checkNotifications = useCallback(async () => {

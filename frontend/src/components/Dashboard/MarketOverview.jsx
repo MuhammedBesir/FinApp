@@ -33,7 +33,7 @@ const MarketOverview = () => {
     setIsLoading(true);
     try {
       // Tüm piyasa verilerini tek seferde çek
-      const response = await fetch('http://localhost:8000/api/market/all', {
+      const response = await fetch('/api/market/all', {
         cache: 'no-cache'
       });
       const result = await response.json();

@@ -17,7 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = '/api';
 
 const statusLabels = {
   upcoming: 'Yaklaşan',

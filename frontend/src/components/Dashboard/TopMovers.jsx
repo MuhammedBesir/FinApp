@@ -24,7 +24,7 @@ const TopMovers = ({ refreshInterval = 60000 }) => {
     try {
       setLoading(true);
       const response = await axios.get(
-        "http://localhost:8000/api/screener/top-movers?top_n=5",
+        "/api/screener/top-movers?top_n=5",
       );
       setMovers(response.data);
       setLastUpdate(new Date());

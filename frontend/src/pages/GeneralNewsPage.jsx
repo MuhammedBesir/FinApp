@@ -26,7 +26,7 @@ const GeneralNewsPage = () => {
     try {
       setLoading(true);
       const response = await axios.get(
-        "http://localhost:8000/api/news/general"
+        "/api/news/general"
       );
       setNews({
         turkey: response.data.turkey || [],

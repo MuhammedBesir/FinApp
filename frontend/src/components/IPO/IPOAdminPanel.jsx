@@ -17,7 +17,7 @@ import {
   WifiOff,
 } from "lucide-react";
 
-const API_URL = "http://localhost:8000/api";
+const API_URL = "/api";
 
 // Boş IPO şablonu
 const emptyIPO = {

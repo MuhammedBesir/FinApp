@@ -45,7 +45,7 @@ const MobileDashboard = () => {
   useEffect(() => {
     const fetchMarket = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/market/all');
+        const res = await fetch('/api/market/all');
         const data = await res.json();
         if (data.success) setMarketData(data.data);
       } catch (e) {

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { usePortfolioStore } from "../store/portfolioStore";
 
-const API_URL = "http://localhost:8000/api";
+const API_URL = "/api";
 
 // Kullanıcı ID
 const getUserId = () => {

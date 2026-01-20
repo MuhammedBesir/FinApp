@@ -27,7 +27,7 @@ const EconomyNewsPage = () => {
     try {
       setLoading(true);
       const response = await axios.get(
-        "http://localhost:8000/api/news/economy"
+        "/api/news/economy"
       );
       setNews({
         turkey: response.data.turkey || [],

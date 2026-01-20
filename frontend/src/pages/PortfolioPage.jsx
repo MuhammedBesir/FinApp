@@ -171,7 +171,7 @@ const PortfolioPage = () => {
       setLoadingPrice(true);
       try {
         const response = await fetch(
-          `http://localhost:8000/api/stocks/${newHolding.ticker}/current-price`
+          `/api/stocks/${newHolding.ticker}/current-price`
         );
         if (response.ok) {
           const data = await response.json();
@@ -199,7 +199,7 @@ const PortfolioPage = () => {
       try {
         for (const holding of holdings) {
           const response = await fetch(
-            `http://localhost:8000/api/stocks/${holding.ticker}/current-price`
+            `/api/stocks/${holding.ticker}/current-price`
           );
           if (response.ok) {
             const data = await response.json();
@@ -233,7 +233,7 @@ const PortfolioPage = () => {
     try {
       for (const holding of holdings) {
         const response = await fetch(
-          `http://localhost:8000/api/stocks/${holding.ticker}/current-price`
+          `/api/stocks/${holding.ticker}/current-price`
         );
         if (response.ok) {
           const data = await response.json();
@@ -320,7 +320,7 @@ const PortfolioPage = () => {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/stocks/${holding.ticker}/current-price`
+        `/api/stocks/${holding.ticker}/current-price`
       );
       if (response.ok) {
         const data = await response.json();

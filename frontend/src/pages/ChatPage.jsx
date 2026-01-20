@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 
-const API_URL = "http://localhost:8000/api";
+const API_URL = "/api";
 
 // Emoji seçici
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "🚀", "📈", "📉", "💰", "🔥"];

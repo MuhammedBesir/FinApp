@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useStore } from "../store";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 // BIST 30 hisseleri
 const BIST_STOCKS = [

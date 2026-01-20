@@ -26,7 +26,7 @@ const MobileScreenerPage = () => {
   useEffect(() => {
     const fetchStocks = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/screener/top-picks');
+        const res = await fetch('/api/screener/top-picks');
         const data = await res.json();
         if (data.success) {
           setStocks(data.picks || []);

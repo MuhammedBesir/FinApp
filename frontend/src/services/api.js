@@ -5,7 +5,7 @@
 import axios from "axios";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+  import.meta.env.VITE_API_URL || "/api";
 
 // Create axios instance
 const apiClient = axios.create({
@@ -278,7 +278,7 @@ export const api = {
 
   // Health Check
   healthCheck: async () => {
-    const response = await axios.get("http://localhost:8000/health");
+    const response = await axios.get("/health");
     return response.data;
   },
 };

@@ -32,7 +32,7 @@ const MobileDailyPicksPage = () => {
       setLoading(true);
       // New Improved Strategy Endpoint
       const response = await axios.get(
-        `http://localhost:8000/api/signals/daily-picks?strategy=moderate&max_picks=5`
+        `/api/signals/daily-picks?strategy=moderate&max_picks=5`
       );
       
       const picks = response.data.picks || [];
@@ -69,7 +69,7 @@ const MobileDailyPicksPage = () => {
       });
       
       try {
-           const statusRes = await axios.get('http://localhost:8000/api/screener/day-trade-status');
+           const statusRes = await axios.get('/api/screener/day-trade-status');
            setDayTradeStatus(statusRes.data);
       } catch (err) {
            console.log("Status fetch failed", err);

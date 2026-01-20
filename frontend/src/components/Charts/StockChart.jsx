@@ -28,7 +28,7 @@ const StockChart = ({ data, indicators, selectedIndicators = {}, height }) => {
         // Fetch Ichimoku - 1h interval, 1mo period for better data
         if (selectedIndicators.ichimoku?.enabled) {
           const response = await axios.get(
-            `http://localhost:8000/api/indicators/${selectedTicker}/ichimoku?interval=1h&period=1mo`
+            `/api/indicators/${selectedTicker}/ichimoku?interval=1h&period=1mo`
           );
           setIchimokuData(response.data.data);
         } else {
@@ -38,7 +38,7 @@ const StockChart = ({ data, indicators, selectedIndicators = {}, height }) => {
         // Fetch Fibonacci - 1h interval for better accuracy
         if (selectedIndicators.fibonacci?.enabled) {
           const response = await axios.get(
-            `http://localhost:8000/api/indicators/${selectedTicker}/fibonacci?interval=1h&period=1mo&lookback=100`
+            `/api/indicators/${selectedTicker}/fibonacci?interval=1h&period=1mo&lookback=100`
           );
           setFibonacciLevels(response.data.levels);
         } else {
@@ -49,7 +49,7 @@ const StockChart = ({ data, indicators, selectedIndicators = {}, height }) => {
         if (selectedIndicators.bollinger?.enabled) {
           const { period = 20, stdDev = 2.0 } = selectedIndicators.bollinger;
           const response = await axios.get(
-            `http://localhost:8000/api/indicators/${selectedTicker}/bollinger?interval=1h&period=1mo&bb_period=${period}&std_dev=${stdDev}`
+            `/api/indicators/${selectedTicker}/bollinger?interval=1h&period=1mo&bb_period=${period}&std_dev=${stdDev}`
           );
           setBollingerData(response.data.data);
         } else {
@@ -69,7 +69,7 @@ const StockChart = ({ data, indicators, selectedIndicators = {}, height }) => {
         // Fetch Trend Channel
         if (selectedIndicators.trendChannel?.enabled) {
           const response = await axios.get(
-            `http://localhost:8000/api/indicators/${selectedTicker}/trend-channel?interval=1d&period=3mo&channel_period=20`
+            `/api/indicators/${selectedTicker}/trend-channel?interval=1d&period=3mo&channel_period=20`
           );
           if (response.data?.success) {
             setTrendChannelData(response.data);

@@ -92,8 +92,14 @@ class AdvancedWebSocketService {
     this.userId = userId;
 
     // Build URL with query params
-    const baseUrl =
-      import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws/stream";
+    let baseUrl = import.meta.env.VITE_WS_URL;
+    
+    if (!baseUrl) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      baseUrl = `${protocol}//${host}/ws/stream`;
+    }
+
     const params = new URLSearchParams();
     params.set("channels", channels.join(","));
     if (tickers.length > 0) params.set("tickers", tickers.join(","));

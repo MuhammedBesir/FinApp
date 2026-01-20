@@ -131,7 +131,7 @@ class NotificationService {
    */
   async checkAlerts() {
     try {
-      const response = await axios.get('http://localhost:8000/api/alerts/check');
+      const response = await axios.get('/api/alerts/check');
       
       if (response.data.success && response.data.triggered_alerts) {
         const triggered = response.data.triggered_alerts;
@@ -186,7 +186,7 @@ class NotificationService {
    */
   async createAlert(alertData) {
     try {
-      const response = await axios.post('http://localhost:8000/api/alerts/create', alertData);
+      const response = await axios.post('/api/alerts/create', alertData);
       return response.data;
     } catch (error) {
       console.error('Error creating alert:', error);
@@ -199,7 +199,7 @@ class NotificationService {
    */
   async getActiveAlerts() {
     try {
-      const response = await axios.get('http://localhost:8000/api/alerts/active');
+      const response = await axios.get('/api/alerts/active');
       return response.data.alerts || [];
     } catch (error) {
       console.error('Error getting alerts:', error);
@@ -212,7 +212,7 @@ class NotificationService {
    */
   async deleteAlert(alertId) {
     try {
-      const response = await axios.delete(`http://localhost:8000/api/alerts/${alertId}`);
+      const response = await axios.delete(`/api/alerts/${alertId}`);
       return response.data;
     } catch (error) {
       console.error('Error deleting alert:', error);
@@ -226,7 +226,7 @@ class NotificationService {
   async toggleAlert(alertId, active) {
     try {
       const response = await axios.put(
-        `http://localhost:8000/api/alerts/${alertId}/toggle?active=${active}`
+        `/api/alerts/${alertId}/toggle?active=${active}`
       );
       return response.data;
     } catch (error) {

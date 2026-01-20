@@ -23,7 +23,7 @@ const NotificationCenter = ({ isOpen, onClose }) => {
   const [stats, setStats] = useState(null);
 
   // API base URL
-  const API_BASE = 'http://localhost:8000/api';
+  const API_BASE = '/api';
 
   // Bildirimleri yükle
   const loadNotifications = async (unreadOnly = false) => {
