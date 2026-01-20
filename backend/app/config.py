@@ -10,9 +10,10 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
     # Database - Neon PostgreSQL for production, SQLite for development
+    # On Vercel (Lambda), use /tmp for SQLite if not using Postgres
     database_url: str = os.getenv(
         "DATABASE_URL", 
-        "sqlite:///./trading_bot.db"
+        "sqlite:////tmp/trading_bot.db" if os.getenv("VERCEL") else "sqlite:///./trading_bot.db"
     )
     
     # Neon PostgreSQL specific settings
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     api_reload: bool = True
     
     # CORS
-    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000"
+    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,https://fin-app-bay.vercel.app"
     
     # Trading
     default_ticker: str = "TRALT.IS"
