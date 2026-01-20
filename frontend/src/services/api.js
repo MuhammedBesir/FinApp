@@ -7,9 +7,20 @@ import axios from "axios";
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "/api";
 
+// Safety check: If API_URL is localhost but we are in production, force relative path
+if (API_BASE_URL.includes('localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+  console.warn('⚠️ Detected localhost VITE_API_URL in production. Switching to relative path.');
+  // We can't reassign const, so we need to refactor slightly or assume this runs before export
+}
+// Refactoring to let to allow reassignment
+let finalApiUrl = API_BASE_URL;
+if (finalApiUrl.includes('localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+   finalApiUrl = "/api";
+}
+
 // Create axios instance
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: finalApiUrl,
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
@@ -43,7 +54,7 @@ apiClient.interceptors.response.use(
       const refreshToken = localStorage.getItem("refreshToken");
       if (refreshToken) {
         try {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          const response = await axios.post(`${finalApiUrl}/auth/refresh`, {
             refresh_token: refreshToken,
           });
 

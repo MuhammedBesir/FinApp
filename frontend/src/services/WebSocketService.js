@@ -93,6 +93,12 @@ class AdvancedWebSocketService {
 
     // Build URL with query params
     let baseUrl = import.meta.env.VITE_WS_URL;
+
+    // Safety check: Ignore localhost in production (common Vercel misconfig)
+    if (baseUrl && baseUrl.includes('localhost') && !window.location.hostname.includes('localhost')) {
+      console.warn('Ignoring localhost VITE_WS_URL in production');
+      baseUrl = null;
+    }
     
     if (!baseUrl) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
