@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from app.services.alert_manager import AlertManager
-from app.services.stock_screener import StockScreener
 from app.services.data_fetcher import DataFetcher
 from app.utils.logger import logger
 
@@ -14,7 +13,6 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 # Initialize services
 alert_manager = AlertManager()
-screener = StockScreener()
 data_fetcher = DataFetcher()
 
 
@@ -79,29 +77,39 @@ async def check_alerts():
     Tüm alertleri kontrol et ve tetiklenen alertleri döndür
     
     Frontend polling için kullanılır (30 saniyede bir)
+    Vercel timeout'unu önlemek için optimize edildi
     """
     try:
+        # Önce aktif alertleri kontrol et - yoksa hızlıca dön
+        active_alerts = alert_manager.get_active_alerts()
+        
+        if not active_alerts:
+            # Aktif alert yoksa hızlıca boş döndür
+            return {
+                "success": True,
+                "triggered_count": 0,
+                "triggered_alerts": []
+            }
+        
+        # Maksimum 3 ticker kontrol et (Vercel 10s timeout)
+        unique_tickers = list(set(alert['ticker'] for alert in active_alerts))[:3]
+        
         # Tüm hisseler için güncel veriyi topla
         market_data = {}
         
-        active_alerts = alert_manager.get_active_alerts()
-        unique_tickers = set(alert['ticker'] for alert in active_alerts)
-        
         for ticker in unique_tickers:
             try:
-                # Price data
+                # Sadece fiyat verisini al (hızlı)
                 current_price = data_fetcher.get_current_price(ticker)
-                
-                # Score data
-                signal = screener.get_stock_signal(ticker, interval='5m', period='1d')
                 
                 market_data[ticker] = {
                     'price': current_price or 0,
-                    'score': signal.get('score', 0) if 'error' not in signal else 0,
-                    'recommendation': signal.get('recommendation', '') if 'error' not in signal else ''
+                    'score': 0,  # Score hesaplaması yavaş, atla
+                    'recommendation': ''
                 }
             except Exception as e:
-                logger.error(f"Error fetching data for {ticker}: {e}")
+                logger.warning(f"Error fetching data for {ticker}: {e}")
+                market_data[ticker] = {'price': 0, 'score': 0, 'recommendation': ''}
                 continue
         
         # Alertleri kontrol et
