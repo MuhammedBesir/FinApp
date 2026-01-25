@@ -2,6 +2,11 @@
 Trading Signal Generator - PROFESSIONAL TRADING RULES
 Generates buy/sell/hold signals based on technical indicators
 Professional risk management and position sizing integrated
+
+HYBRID STRATEGY INTEGRATED:
+- V2 Filters (min score 75, technical stop-loss)
+- V3 Exit Strategy (partial exit, TP1/TP2)
+- Win Rate Booster (optional bonus)
 """
 import pandas as pd
 import numpy as np
@@ -10,6 +15,14 @@ from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from app.utils.logger import logger
+
+# Hybrid Strategy Import
+try:
+    from app.services.hybrid_strategy import HybridSignalGenerator, HybridRiskManagement
+    HYBRID_AVAILABLE = True
+except ImportError:
+    HYBRID_AVAILABLE = False
+    logger.warning("Hybrid strategy modülü yüklenemedi")
 
 class SignalType(Enum):
     """Signal types"""
@@ -172,12 +185,24 @@ class SignalGenerator:
     """
     Generate trading signals based on technical analysis
     PROFESSIONAL TRADING RULES INTEGRATED
+    
+    Now with HYBRID STRATEGY support:
+    - use_hybrid=True: V2 filters + V3 exit + Win Rate Booster
+    - use_hybrid=False: Original strategy
     """
     
-    def __init__(self, strategy_type: str = "moderate"):
+    def __init__(self, strategy_type: str = "moderate", use_hybrid: bool = True):
         self.strategy_type = StrategyType(strategy_type)
         self.risk_mgmt = RiskManagement()
-        logger.info(f"SignalGenerator initialized with {strategy_type} strategy")
+        self.use_hybrid = use_hybrid and HYBRID_AVAILABLE
+        
+        # Hybrid strateji aktifse onu kullan
+        if self.use_hybrid:
+            self.hybrid_generator = HybridSignalGenerator()
+            logger.info(f"SignalGenerator initialized with HYBRID strategy (V2+V3)")
+        else:
+            self.hybrid_generator = None
+            logger.info(f"SignalGenerator initialized with {strategy_type} strategy")
         
     def get_market_phase(self, current_time: Optional[datetime] = None) -> MarketPhase:
         if current_time is None:
@@ -218,6 +243,8 @@ class SignalGenerator:
     def generate_signal(self, df: pd.DataFrame, indicators: Dict) -> Dict[str, Any]:
         """
         Generate signal using IMPROVED STRATEGY LOGIC
+        
+        If use_hybrid=True, uses Hybrid Strategy (V2 + V3 best features)
         """
         # Default empty signal
         empty_signal = {
@@ -232,6 +259,40 @@ class SignalGenerator:
         if df.empty or len(df) < 50:
             return empty_signal
 
+        # === HYBRID STRATEGY (Önerilen) ===
+        if self.use_hybrid and self.hybrid_generator:
+            try:
+                hybrid_result = self.hybrid_generator.generate_signal(
+                    df, indicators, apply_booster=True
+                )
+                
+                # Hybrid format'ı standart format'a dönüştür
+                if hybrid_result.get("signal") == "BUY":
+                    # Add position sizing
+                    pos_info = self.calculate_position_size(
+                        100000,  # Default portfolio
+                        hybrid_result.get("entry_price", 0),
+                        hybrid_result.get("stop_loss", 0)
+                    )
+                    hybrid_result["position_size_pct"] = pos_info["position_pct"]
+                    hybrid_result["max_risk_amount"] = pos_info["max_loss"]
+                    hybrid_result["shares"] = pos_info["shares"]
+                    
+                    # Add hybrid marker
+                    hybrid_result["strategy"] = "HYBRID_V2_V3"
+                    hybrid_result["risk_reward_ratio"] = hybrid_result.get("risk_reward_1", 0)
+                    hybrid_result["take_profit"] = hybrid_result.get("take_profit_1", 0)
+                    hybrid_result["take_profit_2"] = hybrid_result.get("take_profit_2", 0)
+                    
+                return hybrid_result
+            except Exception as e:
+                logger.error(f"Hybrid strategy error: {e}, falling back to original")
+                # Hata durumunda orijinal stratejiye geri dön
+
+        # === ORIGINAL STRATEGY (Fallback) ===
+
+        # === ORIGINAL STRATEGY (Fallback) ===
+        
         # 1. Filters
         mtf_pass, mtf_score, mtf_reasons = ImprovedFilters.multi_timeframe_trend_filter(indicators)
         vol_pass, vol_score, vol_reasons = ImprovedFilters.volume_quality_filter(df, indicators)

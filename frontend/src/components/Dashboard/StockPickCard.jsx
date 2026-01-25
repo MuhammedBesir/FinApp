@@ -1,6 +1,6 @@
 /**
  * Advanced Stock Pick Card - Gelişmiş Hisse Kartı
- * 📊 Detaylı analiz | 🎯 TP1 & TP2 | 🛡️ Risk yönetimi | ⚡ Tek tıkla işlem
+ * 📊 V2+V3 Hybrid Strateji | 🎯 TP1 & TP2 Partial Exit | 🛡️ Risk yönetimi | ⚡ Tek tıkla işlem
  */
 import React, { useState } from 'react';
 import {
@@ -62,8 +62,10 @@ const StockPickCard = ({ pick, rank, inWatchlist, onToggleWatchlist }) => {
         stopLoss: pick.levels.stop_loss,
         takeProfit: pick.levels.take_profit_1,
         takeProfitTP2: pick.levels.take_profit_2,
-        strategy: 'V2_Enhanced',
-        status: 'open'
+        strategy: 'V2_V3_Hybrid',
+        status: 'open',
+        partialExit: true,
+        partialExitPct: 50
       };
       
       await addTrade(trade);
@@ -197,16 +199,19 @@ const StockPickCard = ({ pick, rank, inWatchlist, onToggleWatchlist }) => {
         {/* TP1 & TP2 - Partial Exit */}
         {pick.levels.take_profit_2 ? (
           <>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-success/10">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gradient-to-r from-success/10 to-primary/10 border border-success/30">
               <Zap className="w-4 h-4 text-success" />
               <span className="text-xs font-semibold text-success">
-                Partial Exit Stratejisi (TP1: %50 | TP2: %50)
+                🎯 V2+V3 Partial Exit: TP1'de %50 sat, Stop'u giriş fiyatına çek
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="p-3 rounded-xl bg-success/10 border border-success/30">
+              <div className="p-3 rounded-xl bg-success/10 border border-success/30 relative">
+                <div className="absolute -top-2 -right-2">
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-warning text-white rounded">%50 SAT</span>
+                </div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs text-success font-semibold">HEDEF 1 (50%)</p>
+                  <p className="text-xs text-success font-semibold">HEDEF 1</p>
                   <span className="text-xs text-theme-muted">1:2.5</span>
                 </div>
                 <p className="text-lg font-bold text-theme-text">
@@ -217,9 +222,12 @@ const StockPickCard = ({ pick, rank, inWatchlist, onToggleWatchlist }) => {
                 </p>
               </div>
 
-              <div className="p-3 rounded-xl bg-success/10 border border-success/30">
+              <div className="p-3 rounded-xl bg-success/10 border border-success/30 relative">
+                <div className="absolute -top-2 -right-2">
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-success text-white rounded">KALAN %50</span>
+                </div>
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-xs text-success font-semibold">HEDEF 2 (50%)</p>
+                  <p className="text-xs text-success font-semibold">HEDEF 2</p>
                   <span className="text-xs text-theme-muted">1:4.0</span>
                 </div>
                 <p className="text-lg font-bold text-theme-text">

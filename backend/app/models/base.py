@@ -23,40 +23,53 @@ if "neon" in DATABASE_URL.lower() and "sslmode" not in DATABASE_URL:
     DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
 
 # Create engine based on database type
-try:
-    if DATABASE_URL.startswith("sqlite"):
-        # SQLite - for local development
-        engine = create_engine(
-            DATABASE_URL,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=settings.log_level.upper() == "DEBUG"
-        )
-        logger.info("Using SQLite database for development")
-    else:
-        # PostgreSQL - for production (Neon)
-        engine = create_engine(
-            DATABASE_URL,
-            poolclass=QueuePool,
-            pool_size=settings.database_pool_size,
-            max_overflow=settings.database_max_overflow,
-            pool_timeout=settings.database_pool_timeout,
-            pool_recycle=settings.database_pool_recycle,
-            pool_pre_ping=True,  # Connection health check
-            echo=settings.log_level.upper() == "DEBUG"
-        )
-        logger.info("Using PostgreSQL database for production")
+engine = None
+SessionLocal = None
+Base = declarative_base()
 
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
+def _init_database():
+    """Lazy database initialization to avoid startup crashes"""
+    global engine, SessionLocal
+    if engine is not None:
+        return True
+    
+    try:
+        if DATABASE_URL.startswith("sqlite"):
+            # SQLite - for local development
+            engine = create_engine(
+                DATABASE_URL,
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+                echo=settings.log_level.upper() == "DEBUG"
+            )
+            logger.info("Using SQLite database for development")
+        else:
+            # PostgreSQL - for production (Neon)
+            engine = create_engine(
+                DATABASE_URL,
+                poolclass=QueuePool,
+                pool_size=settings.database_pool_size,
+                max_overflow=settings.database_max_overflow,
+                pool_timeout=settings.database_pool_timeout,
+                pool_recycle=settings.database_pool_recycle,
+                pool_pre_ping=True,  # Connection health check
+                echo=settings.log_level.upper() == "DEBUG"
+            )
+            logger.info("Using PostgreSQL database for production")
+
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        return True
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        engine = None
+        SessionLocal = None
+        return False
+
+# Try to initialize on import, but don't crash if it fails
+try:
+    _init_database()
 except Exception as e:
-    import sys, traceback
-    print(f"CRITICAL ERROR during database initialization: {e}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
-    # Don't exit here, let the app try to start so we see the logs on Vercel
-    SessionLocal = None
-    Base = declarative_base()
-    engine = None
+    logger.warning(f"Database not available at startup: {e}")
 
 
 def get_db():
@@ -64,6 +77,11 @@ def get_db():
     Dependency for getting database session
     Usage: db: Session = Depends(get_db)
     """
+    if SessionLocal is None:
+        # Try lazy initialization
+        if not _init_database():
+            raise RuntimeError("Database not available")
+    
     db = SessionLocal()
     try:
         yield db

@@ -8,3 +8,13 @@ from app.services.trading_rules import (
     TradeSignal,
     MarketAnalysis
 )
+# Hybrid Strategy
+try:
+    from app.services.hybrid_strategy import (
+        HybridSignalGenerator,
+        HybridRiskManagement,
+        HybridSignal,
+        simulate_hybrid_trade
+    )
+except ImportError:
+    pass

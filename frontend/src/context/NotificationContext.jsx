@@ -21,9 +21,8 @@ export const NotificationProvider = ({ children }) => {
   // Fix: Do not default to /api here if we want to avoid double prefixing with axios instance
   // But since we use raw axios here, we need a safe base.
   // Ideally, use the apiClient from ../services/api
+  // API_BASE should be empty for proxy to work correctly
   const API_BASE = import.meta.env.VITE_API_URL || ''; 
-  // If empty, axios uses relative path (which is what we want for proxy/Vercel)
-  // If VITE_API_URL is set (e.g. http://localhost:8000), it uses that.
 
 
   // Bildirimleri kontrol et
@@ -32,7 +31,7 @@ export const NotificationProvider = ({ children }) => {
     
     setIsChecking(true);
     try {
-      const response = await axios.get(`${API_BASE}/api/alerts/check`);
+      const response = await axios.get(`/api/alerts/check`);
       
       if (response.data.success && response.data.triggered_alerts.length > 0) {
         const newNotifications = response.data.triggered_alerts;
@@ -82,7 +81,7 @@ export const NotificationProvider = ({ children }) => {
   // İstatistikleri yükle
   const loadStats = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/api/alerts/statistics`);
+      const response = await axios.get(`/api/alerts/statistics`);
       if (response.data.success) {
         setStats(response.data.statistics);
         setUnreadCount(response.data.statistics.unread_count);
@@ -114,7 +113,7 @@ export const NotificationProvider = ({ children }) => {
   // Alert oluştur
   const createAlert = async (alertData) => {
     try {
-      const response = await axios.post(`${API_BASE}/api/alerts/create`, alertData);
+      const response = await axios.post(`/api/alerts/create`, alertData);
       
       if (response.data.success) {
         toast.success('Alert başarıyla oluşturuldu!');
@@ -131,7 +130,7 @@ export const NotificationProvider = ({ children }) => {
   // Alert sil
   const deleteAlert = async (alertId) => {
     try {
-      const response = await axios.delete(`${API_BASE}/api/alerts/${alertId}`);
+      const response = await axios.delete(`/api/alerts/${alertId}`);
       
       if (response.data.success) {
         toast.success('Alert silindi');
@@ -147,7 +146,7 @@ export const NotificationProvider = ({ children }) => {
   // Bildirimi okundu işaretle
   const markAsRead = async (alertId) => {
     try {
-      await axios.put(`${API_BASE}/api/alerts/notifications/${alertId}/read`);
+      await axios.put(`/api/alerts/notifications/${alertId}/read`);
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error('Bildirim güncellenemedi:', error);
@@ -157,7 +156,7 @@ export const NotificationProvider = ({ children }) => {
   // Tümünü okundu işaretle
   const markAllAsRead = async () => {
     try {
-      await axios.put(`${API_BASE}/api/alerts/notifications/read-all`);
+      await axios.put(`/api/alerts/notifications/read-all`);
       setUnreadCount(0);
     } catch (error) {
       console.error('Bildirimler güncellenemedi:', error);
