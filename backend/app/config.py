@@ -61,11 +61,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     
-    # Rate Limiting
-    rate_limit_enabled: bool = True
-    rate_limit_per_minute: int = 60
-    rate_limit_per_hour: int = 1000
-    rate_limit_burst: int = 10
+    # Rate Limiting - Relaxed for serverless
+    rate_limit_enabled: bool = not os.getenv("VERCEL", False)  # Disable on Vercel
+    rate_limit_per_minute: int = 120
+    rate_limit_per_hour: int = 3000
+    rate_limit_burst: int = 30
     
     # Security - Must change in production
     secret_key: str = "your-secret-key-change-in-production"
