@@ -77,7 +77,7 @@ const SignalCenterPage = () => {
     const promises = BIST_STOCKS.map(async (stock) => {
       try {
         const response = await fetch(
-          `${API_URL}/signals/${stock}.IS?strategy=${strategy}&interval=1h&period=1mo`,
+          `${API_URL}/signals/${stock}.IS?strategy=${strategy}&interval=1d&period=3mo`,
         );
         if (response.ok) {
           const data = await response.json();

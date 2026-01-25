@@ -9,8 +9,8 @@ export const useStore = create(
     // Selected ticker and settings
     selectedTicker: "TRALT.IS",
     strategy: "moderate",
-    interval: "1h",
-    period: "1mo",
+    interval: "1d",
+    period: "3mo",
 
     // Data
     stockData: null,

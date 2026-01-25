@@ -368,46 +368,16 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 </div>
               </div>
 
-              {/* Time Settings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-theme-muted flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-blue-400" />
-                    Zaman Aralığı
-                  </label>
-                  <select
-                    value={interval}
-                    onChange={(e) => setInterval(e.target.value)}
-                    className="w-full bg-theme-bg border border-theme-border rounded-lg px-3 py-2.5 text-sm text-theme-text focus:outline-none focus:border-primary-500 transition-colors"
-                  >
-                    <option value="1m">1 Dakika</option>
-                    <option value="5m">5 Dakika</option>
-                    <option value="15m">15 Dakika</option>
-                    <option value="30m">30 Dakika</option>
-                    <option value="1h">1 Saat</option>
-                    <option value="1d">1 Gün</option>
-                    <option value="1wk">1 Hafta</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-theme-muted flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-purple-400" />
-                    Geçmiş Veri
-                  </label>
-                  <select
-                    value={period}
-                    onChange={(e) => setPeriod(e.target.value)}
-                    className="w-full bg-theme-bg border border-theme-border rounded-lg px-3 py-2.5 text-sm text-theme-text focus:outline-none focus:border-primary-500 transition-colors"
-                  >
-                    <option value="1d">1 Gün</option>
-                    <option value="5d">5 Gün</option>
-                    <option value="1mo">1 Ay</option>
-                    <option value="3mo">3 Ay</option>
-                    <option value="6mo">6 Ay</option>
-                    <option value="1y">1 Yıl</option>
-                    <option value="max">Tümü</option>
-                  </select>
+              {/* Time Settings - Günlük Trade için sabit */}
+              <div className="p-4 bg-theme-bg rounded-xl border border-theme-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center">
+                    <Clock className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-theme-text">Günlük Trade Modu</p>
+                    <p className="text-xs text-theme-muted">Günlük mumlar • 3 aylık geçmiş veri</p>
+                  </div>
                 </div>
               </div>
             </>

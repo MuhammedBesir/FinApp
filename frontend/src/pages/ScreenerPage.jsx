@@ -59,7 +59,7 @@ const ScreenerPage = () => {
     setRefreshing(true);
     try {
       const response = await fetch(
-        `${API_URL}/screener/scan?interval=5m&period=1d`
+        `${API_URL}/screener/scan?interval=1d&period=3mo`
       );
       if (response.ok) {
         const data = await response.json();
