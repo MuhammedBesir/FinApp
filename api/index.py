@@ -8,15 +8,9 @@ sys.path.insert(0, backend_path)
 # Set environment variable for serverless
 os.environ['VERCEL'] = '1'
 
-from mangum import Mangum
+# Import FastAPI app - Vercel should auto-detect ASGI
 from app.main import app
 
-# Create Mangum adapter
-_mangum_handler = Mangum(app, lifespan="off")
-
-# Vercel expects a function named 'handler' for AWS Lambda-style invocation
-def handler(event, context):
-    return _mangum_handler(event, context)
 
 
 
