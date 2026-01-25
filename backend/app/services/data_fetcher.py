@@ -142,10 +142,13 @@ class DataFetcher:
             
             # Add timeout and better error handling for yfinance
             try:
-                df = stock.history(period=period, interval=interval, timeout=10)
+                df = stock.history(period=period, interval=interval, timeout=15)
             except TypeError:
                 # Older yfinance versions don't support timeout parameter
                 df = stock.history(period=period, interval=interval)
+            except Exception as hist_err:
+                logger.error(f"yfinance history error for {ticker}: {hist_err}")
+                df = None
             
             # Handle None return from yfinance
             if df is None:
