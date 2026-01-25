@@ -66,6 +66,19 @@ class DataFetcher:
         Returns:
             bool: True if ticker is valid
         """
+        # On Vercel serverless, skip strict validation - just check format
+        import os
+        if os.getenv("VERCEL"):
+            # Basic format check for BIST tickers
+            if ticker.endswith(".IS") and len(ticker) >= 5:
+                logger.info(f"Vercel env: Skipping strict validation for {ticker}")
+                return True
+        
+        # Also accept known tickers without API call
+        if ticker in self.bist30_tickers:
+            logger.info(f"Known ticker: {ticker}")
+            return True
+        
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
@@ -79,6 +92,9 @@ class DataFetcher:
             
         except Exception as e:
             logger.error(f"Error validating ticker {ticker}: {e}")
+            # On error, allow if format looks correct
+            if ticker.endswith(".IS"):
+                return True
             return False
     
     def _get_cache_key(self, ticker: str, interval: str, period: str) -> str:
