@@ -29,7 +29,7 @@ Base = declarative_base()
 
 def _init_database():
     """Lazy database initialization to avoid startup crashes"""
-    global engine, SessionLocal
+    global engine, SessionLocal, DATABASE_URL
     if engine is not None:
         return True
     
@@ -45,8 +45,20 @@ def _init_database():
             logger.info("Using SQLite database for development")
         else:
             # PostgreSQL - for production (Neon)
+            # Try pg8000 driver first (pure Python, works on Vercel)
+            # then fall back to psycopg2
+            pg_url = DATABASE_URL
+            try:
+                # Test with pg8000 first
+                import pg8000
+                if "postgresql://" in pg_url and "+pg8000" not in pg_url:
+                    pg_url = pg_url.replace("postgresql://", "postgresql+pg8000://", 1)
+                logger.info("Using pg8000 driver for PostgreSQL")
+            except ImportError:
+                logger.info("pg8000 not available, using psycopg2")
+            
             engine = create_engine(
-                DATABASE_URL,
+                pg_url,
                 poolclass=QueuePool,
                 pool_size=settings.database_pool_size,
                 max_overflow=settings.database_max_overflow,
