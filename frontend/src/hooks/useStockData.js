@@ -45,13 +45,19 @@ export const useStockData = () => {
       } catch (error) {
         console.error("Error fetching stock data:", error);
 
-        // Handle 404 specifically (No data available)
-        if (error.response && error.response.status === 404) {
-          setError(
-            "Bu zaman aralığı için veri bulunamadı. Lütfen farklı bir aralık seçin.",
-          );
+        // Handle different error types
+        if (error.response) {
+          if (error.response.status === 404) {
+            setError("Hisse verisi bulunamadı. Lütfen geçerli bir hisse seçin.");
+          } else if (error.response.status === 500) {
+            setError("Sunucu hatası. Lütfen daha sonra tekrar deneyin.");
+          } else {
+            setError(error.response.data?.detail || "Veri alınırken bir hata oluştu");
+          }
+        } else if (error.code === 'ECONNABORTED') {
+          setError("Bağlantı zaman aşımına uğradı. Lütfen tekrar deneyin.");
         } else {
-          setError(error.message || "Veri alınırken bir hata oluştu");
+          setError("Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edin.");
         }
       } finally {
         setLoading(false);
