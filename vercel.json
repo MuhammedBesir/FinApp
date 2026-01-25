@@ -7,7 +7,7 @@
     { "source": "/api/(.*)", "destination": "/api/index.py" }
   ],
   "functions": {
-    "api/**/*.py": {
+    "api/*.py": {
       "maxDuration": 30,
       "memory": 1024
     }
