@@ -1376,20 +1376,16 @@ async def get_signals():
 # Cache for daily picks (5 dakika)
 daily_picks_cache = {"data": None, "timestamp": None}
 
-async def analyze_stock_for_picks(symbol: str) -> dict:
-    """Tek hisse analizi - paralel çalıştırmak için"""
+def analyze_dataframe_for_picks(symbol: str, df) -> dict:
+    """DataFrame'den tek hisse analizi"""
     try:
-        # Hızlı Yahoo Finance isteği
-        ticker_obj = yf.Ticker(symbol)
-        hist = ticker_obj.history(period="3mo", timeout=3)
-        
-        if hist.empty or len(hist) < 20:
+        if df.empty or len(df) < 20:
             return None
         
-        closes = hist['Close'].tolist()
-        highs = hist['High'].tolist()
-        lows = hist['Low'].tolist()
-        volumes = hist['Volume'].tolist()
+        closes = df['Close'].tolist()
+        highs = df['High'].tolist()
+        lows = df['Low'].tolist()
+        volumes = df['Volume'].tolist()
         
         curr = closes[-1]
         
@@ -1420,16 +1416,8 @@ async def analyze_stock_for_picks(symbol: str) -> dict:
         avg_loss = sum(losses) / 14 if losses else 0.0001
         rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
         
-        # ATR hesapla
-        atr = curr * 0.025
-        if len(closes) >= 14 and len(highs) >= 14 and len(lows) >= 14:
-            trs = []
-            for i in range(-14, 0):
-                tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
-                trs.append(tr)
-            atr = sum(trs) / len(trs)
-        
         # Skor hesapla
+        atr = curr * 0.025
         score = 0
         reasons = []
         
@@ -1445,8 +1433,8 @@ async def analyze_stock_for_picks(symbol: str) -> dict:
             score += 20
             reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
         
-        vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
-        if volumes[-1] > vol_avg:
+        vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else (volumes[-1] if volumes else 1)
+        if volumes and volumes[-1] > vol_avg:
             score += 15
             reasons.append("Hacim ortalamanın üstünde")
         
@@ -1458,18 +1446,11 @@ async def analyze_stock_for_picks(symbol: str) -> dict:
                 score += 15
                 reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
         
-        if len(closes) >= 5:
-            momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
-            if 0 < momentum < 5:
-                score += 10
-                reasons.append(f"Pozitif momentum (+{momentum:.1f}%)")
-        
-        if score < 50:  # Daha düşük eşik, sonra sıralarız
+        if score < 50:
             return None
         
         stop = curr - (atr * 2.0)
         risk = curr - stop
-        
         if risk / curr < 0.015:
             return None
         
@@ -1506,237 +1487,63 @@ async def analyze_stock_for_picks(symbol: str) -> dict:
 async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
     """
     Günlük hisse önerileri - Hybrid Strategy v4
-    Paralel istekler + cache ile optimize edildi
+    yf.download ile tek istekte tüm verileri çekiyoruz (çok hızlı)
     """
     global daily_picks_cache
     
     # Cache kontrolü (5 dakika)
     if daily_picks_cache["data"] and daily_picks_cache["timestamp"]:
         cache_age = (datetime.now() - daily_picks_cache["timestamp"]).total_seconds()
-        if cache_age < 300:  # 5 dakika
+        if cache_age < 300:
             logger.info("Returning cached daily picks")
             return daily_picks_cache["data"]
     
-    BIST30 = [
-        'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
-        'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
-        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'FROTO.IS'
-    ]
-    
-    # Paralel olarak tüm hisseleri analiz et (timeout ile)
-    import asyncio
-    
-    async def analyze_with_timeout(symbol):
-        try:
-            return await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    lambda: asyncio.run(analyze_stock_for_picks(symbol)) if asyncio.iscoroutinefunction(analyze_stock_for_picks) else None
-                ),
-                timeout=3.0
-            )
-        except:
-            # Senkron çalıştır
-            try:
-                ticker_obj = yf.Ticker(symbol)
-                hist = ticker_obj.history(period="3mo", timeout=2)
-                if hist.empty or len(hist) < 20:
-                    return None
-                
-                closes = hist['Close'].tolist()
-                highs = hist['High'].tolist()
-                lows = hist['Low'].tolist()
-                volumes = hist['Volume'].tolist()
-                curr = closes[-1]
-                
-                def ema(data, period):
-                    if len(data) < period:
-                        return data[-1] if data else 0
-                    mult = 2 / (period + 1)
-                    result = sum(data[:period]) / period
-                    for price in data[period:]:
-                        result = (price * mult) + (result * (1 - mult))
-                    return result
-                
-                ema9 = ema(closes, 9)
-                ema21 = ema(closes, 21)
-                ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
-                
-                gains, losses = [], []
-                for i in range(1, min(15, len(closes))):
-                    diff = closes[-i] - closes[-i-1]
-                    if diff > 0:
-                        gains.append(diff)
-                    else:
-                        losses.append(abs(diff))
-                
-                avg_gain = sum(gains) / 14 if gains else 0
-                avg_loss = sum(losses) / 14 if losses else 0.0001
-                rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
-                
-                atr = curr * 0.025
-                score = 0
-                reasons = []
-                
-                if curr > ema9 > ema21:
-                    score += 20
-                    reasons.append("EMA trend pozitif (9>21)")
-                if ema21 > ema50:
-                    score += 15
-                    reasons.append("Uzun vadeli trend pozitif (21>50)")
-                if 35 <= rsi <= 65:
-                    score += 20
-                    reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
-                
-                vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
-                if volumes[-1] > vol_avg:
-                    score += 15
-                    reasons.append("Hacim ortalamanın üstünde")
-                
-                if score < 50:
-                    return None
-                
-                stop = curr - (atr * 2.0)
-                risk = curr - stop
-                if risk / curr < 0.015:
-                    return None
-                
-                tp1 = curr + (risk * 2.5)
-                tp2 = curr + (risk * 4.0)
-                
-                return {
-                    "ticker": symbol.replace(".IS", ""),
-                    "entry_price": round(curr, 2),
-                    "stop_loss": round(stop, 2),
-                    "take_profit_1": round(tp1, 2),
-                    "take_profit_2": round(tp2, 2),
-                    "risk_reward_ratio": 2.5,
-                    "risk_reward_2": 4.0,
-                    "risk_pct": round((risk / curr) * 100, 2),
-                    "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
-                    "strength": score,
-                    "confidence": min(score + 10, 100),
-                    "signal": "BUY",
-                    "sector": "BIST30",
-                    "reasons": reasons,
-                    "partial_exit_pct": 0.5,
-                    "exit_strategy": {
-                        "tp1_action": "TP1'de %50 pozisyon kapat",
-                        "tp1_new_stop": "Break-even'a çek",
-                        "tp2_action": "TP2'de kalan %50 kapat"
-                    }
-                }
-            except Exception as e:
-                logger.error(f"Sync analyze error {symbol}: {e}")
-                return None
-    
-    # ThreadPoolExecutor ile paralel çalıştır
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    SYMBOLS = ['THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'EREGL.IS', 'ASELS.IS', 
+               'KCHOL.IS', 'SISE.IS', 'TCELL.IS', 'TUPRS.IS', 'FROTO.IS']
     
     picks = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(lambda s=sym: yf.Ticker(s).history(period="3mo", timeout=2), sym): sym for sym in BIST30[:10]}
+    
+    try:
+        # TEK İSTEKTE TÜM HİSSELERİ ÇEK - Bu çok hızlı!
+        data = yf.download(
+            tickers=SYMBOLS,
+            period="3mo",
+            group_by='ticker',
+            threads=True,
+            progress=False,
+            timeout=8
+        )
         
-        for future in as_completed(futures, timeout=7):
-            symbol = futures[future]
+        for symbol in SYMBOLS:
             try:
-                hist = future.result()
-                if hist.empty or len(hist) < 20:
+                # Multi-ticker download'da her ticker'ın verisi ayrı
+                if len(SYMBOLS) > 1:
+                    ticker_data = data[symbol] if symbol in data.columns.get_level_values(0) else None
+                else:
+                    ticker_data = data
+                
+                if ticker_data is None or ticker_data.empty:
                     continue
                 
-                closes = hist['Close'].tolist()
-                highs = hist['High'].tolist()
-                lows = hist['Low'].tolist()
-                volumes = hist['Volume'].tolist()
-                curr = closes[-1]
-                
-                def ema(data, period):
-                    if len(data) < period:
-                        return data[-1] if data else 0
-                    mult = 2 / (period + 1)
-                    result = sum(data[:period]) / period
-                    for price in data[period:]:
-                        result = (price * mult) + (result * (1 - mult))
-                    return result
-                
-                ema9 = ema(closes, 9)
-                ema21 = ema(closes, 21)
-                ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
-                
-                gains, losses = [], []
-                for i in range(1, min(15, len(closes))):
-                    diff = closes[-i] - closes[-i-1]
-                    if diff > 0:
-                        gains.append(diff)
-                    else:
-                        losses.append(abs(diff))
-                
-                avg_gain = sum(gains) / 14 if gains else 0
-                avg_loss = sum(losses) / 14 if losses else 0.0001
-                rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
-                
-                atr = curr * 0.025
-                score = 0
-                reasons = []
-                
-                if curr > ema9 > ema21:
-                    score += 20
-                    reasons.append("EMA trend pozitif (9>21)")
-                if ema21 > ema50:
-                    score += 15
-                    reasons.append("Uzun vadeli trend pozitif (21>50)")
-                if 35 <= rsi <= 65:
-                    score += 20
-                    reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
-                
-                vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
-                if volumes[-1] > vol_avg:
-                    score += 15
-                    reasons.append("Hacim ortalamanın üstünde")
-                
-                if len(lows) >= 10 and len(highs) >= 10:
-                    swing_low = min(lows[-10:])
-                    swing_high = max(highs[-10:])
-                    pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
-                    if 0.15 <= pos <= 0.55:
-                        score += 15
-                        reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
-                
-                if score < 50:
-                    continue
-                
-                stop = curr - (atr * 2.0)
-                risk = curr - stop
-                if risk / curr < 0.015:
-                    continue
-                
-                tp1 = curr + (risk * 2.5)
-                tp2 = curr + (risk * 4.0)
-                
-                picks.append({
-                    "ticker": symbol.replace(".IS", ""),
-                    "entry_price": round(curr, 2),
-                    "stop_loss": round(stop, 2),
-                    "take_profit_1": round(tp1, 2),
-                    "take_profit_2": round(tp2, 2),
-                    "risk_reward_ratio": 2.5,
-                    "risk_reward_2": 4.0,
-                    "risk_pct": round((risk / curr) * 100, 2),
-                    "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
-                    "strength": score,
-                    "confidence": min(score + 10, 100),
-                    "signal": "BUY",
-                    "sector": "BIST30",
-                    "reasons": reasons,
-                    "partial_exit_pct": 0.5,
-                    "exit_strategy": {
-                        "tp1_action": "TP1'de %50 pozisyon kapat",
-                        "tp1_new_stop": "Break-even'a çek",
-                        "tp2_action": "TP2'de kalan %50 kapat"
-                    }
-                })
+                result = analyze_dataframe_for_picks(symbol, ticker_data)
+                if result:
+                    picks.append(result)
+                    
             except Exception as e:
                 logger.error(f"Error processing {symbol}: {e}")
+                continue
+                
+    except Exception as e:
+        logger.error(f"Download error: {e}")
+        # Fallback: Tek tek dene (daha yavaş ama güvenilir)
+        for symbol in SYMBOLS[:5]:
+            try:
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(period="2mo", timeout=2)
+                result = analyze_dataframe_for_picks(symbol, hist)
+                if result:
+                    picks.append(result)
+            except:
                 continue
     
     # Score'a göre sırala
@@ -1746,7 +1553,7 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
     result = {
         "status": "success",
         "picks": top_picks,
-        "total_scanned": 10,
+        "total_scanned": len(SYMBOLS),
         "found": len(picks),
         "strategy_info": {
             "name": "Hybrid Strategy v4",
