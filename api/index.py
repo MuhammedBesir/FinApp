@@ -1386,7 +1386,10 @@ async def get_signals():
 daily_picks_cache = {"data": None, "timestamp": None}
 
 def analyze_dataframe_for_picks(symbol: str, df) -> dict:
-    """DataFrame'den tek hisse analizi"""
+    """
+    DataFrame'den tek hisse analizi - Hybrid Strategy v4
+    Backtest sonuçlarına göre optimize edilmiş parametreler
+    """
     try:
         if df.empty or len(df) < 20:
             return None
@@ -1425,46 +1428,68 @@ def analyze_dataframe_for_picks(symbol: str, df) -> dict:
         avg_loss = sum(losses) / 14 if losses else 0.0001
         rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
         
-        # Skor hesapla
+        # Momentum hesapla
+        momentum_5d = ((closes[-1] - closes[-5]) / closes[-5] * 100) if len(closes) >= 5 else 0
+        
+        # ========== HYBRID STRATEGY V4 SKORLAMA ==========
         atr = curr * 0.025
         score = 0
         reasons = []
         
+        # 1. EMA Trend (25 puan)
         if curr > ema9 > ema21:
-            score += 20
+            score += 25
             reasons.append("EMA trend pozitif (9>21)")
+        elif curr > ema21:
+            score += 15
+            reasons.append("Fiyat EMA21 üstünde")
         
+        # 2. Uzun vadeli trend (15 puan)
         if ema21 > ema50:
             score += 15
-            reasons.append("Uzun vadeli trend pozitif (21>50)")
+            reasons.append("Uzun vadeli trend pozitif")
         
-        if 35 <= rsi <= 65:
+        # 3. RSI (20-25 puan)
+        if 30 <= rsi <= 70:
             score += 20
             reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
+        elif rsi < 30:
+            score += 25
+            reasons.append(f"RSI aşırı satım ({rsi:.0f})")
         
+        # 4. Hacim (15 puan)
         vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else (volumes[-1] if volumes else 1)
-        if volumes and volumes[-1] > vol_avg:
+        if volumes and volumes[-1] > vol_avg * 0.8:
             score += 15
-            reasons.append("Hacim ortalamanın üstünde")
+            reasons.append("Hacim normal üstü")
         
+        # 5. Momentum (10 puan)
+        if momentum_5d > 0:
+            score += 10
+            reasons.append(f"5 günlük momentum +{momentum_5d:.1f}%")
+        
+        # 6. Pozisyon analizi (bonus 10 puan)
         if len(lows) >= 10 and len(highs) >= 10:
             swing_low = min(lows[-10:])
             swing_high = max(highs[-10:])
             pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
             if 0.15 <= pos <= 0.55:
-                score += 15
+                score += 10
                 reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
         
-        if score < 50:
+        # Minimum skor: 35 (daha düşük eşik = daha fazla fırsat)
+        if score < 35:
             return None
         
+        # Stop Loss ve Take Profit hesapla
         stop = curr - (atr * 2.0)
         risk = curr - stop
+        
         if risk / curr < 0.015:
             return None
         
-        tp1 = curr + (risk * 2.5)
-        tp2 = curr + (risk * 4.0)
+        tp1 = curr + (risk * 2.5)  # Risk/Reward = 2.5
+        tp2 = curr + (risk * 4.0)  # Risk/Reward = 4.0
         
         return {
             "ticker": symbol.replace(".IS", ""),
@@ -1534,7 +1559,12 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
             logger.error(f"DB cache read error: {e}")
     
     # 3. Yahoo Finance'tan çek (son çare)
-    SYMBOLS = ['THYAO.IS', 'GARAN.IS', 'ASELS.IS', 'EREGL.IS', 'FROTO.IS']
+    SYMBOLS = [
+        'THYAO.IS', 'GARAN.IS', 'ASELS.IS', 'EREGL.IS', 'FROTO.IS',
+        'AKBNK.IS', 'YKBNK.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'BIMAS.IS',
+        'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'SASA.IS', 'PETKM.IS'
+    ]
     picks = []
     
     try:
