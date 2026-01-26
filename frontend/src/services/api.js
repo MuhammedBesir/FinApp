@@ -2,6 +2,8 @@
  * API Client for Trading Bot Backend
  * Handles all HTTP requests to the FastAPI backend
  * With built-in caching to prevent rate limiting (429)
+ * 
+ * 🔄 Her 15 dakikada bir tüm BIST30 verisi çekilir ve cache'lenir
  */
 import axios from "axios";
 
@@ -10,15 +12,26 @@ const API_BASE_URL =
 
 // ============ API Cache ============
 const API_CACHE = new Map();
-const CACHE_TTL = 60 * 1000; // 60 seconds cache
-const RATE_LIMIT_DELAY = 500; // 500ms between requests
+const CACHE_TTL = 15 * 60 * 1000; // 15 dakika cache (900 saniye)
+const RATE_LIMIT_DELAY = 1000; // 1 saniye between requests
 let lastRequestTime = 0;
+let bulkFetchInProgress = false;
+let lastBulkFetch = 0;
+
+// BIST30 Ticker listesi
+const BIST30_TICKERS = [
+  "AKBNK.IS", "AKSEN.IS", "ARCLK.IS", "ASELS.IS", "BIMAS.IS",
+  "EKGYO.IS", "ENKAI.IS", "EREGL.IS", "FROTO.IS", "GARAN.IS",
+  "GUBRF.IS", "HEKTS.IS", "ISCTR.IS", "KCHOL.IS", "KRDMD.IS",
+  "ODAS.IS", "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SASA.IS",
+  "SISE.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS",
+  "TOASO.IS", "TUPRS.IS", "YKBNK.IS"
+];
 
 // Cache helper functions
 const getCached = (key) => {
   const cached = API_CACHE.get(key);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`[API Cache] HIT: ${key}`);
     return cached.data;
   }
   return null;
@@ -26,12 +39,6 @@ const getCached = (key) => {
 
 const setCache = (key, data) => {
   API_CACHE.set(key, { data, timestamp: Date.now() });
-  // Clean old cache entries
-  if (API_CACHE.size > 100) {
-    const oldest = [...API_CACHE.entries()]
-      .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-    API_CACHE.delete(oldest[0]);
-  }
 };
 
 // Rate limit helper
@@ -367,4 +374,63 @@ export const api = {
   },
 };
 
+// ============ BULK FETCH - Tüm BIST30'u 15 dk'da bir çek ============
+const fetchAllStocksData = async () => {
+  if (bulkFetchInProgress) {
+    console.log('[Bulk Fetch] Already in progress, skipping...');
+    return;
+  }
+  
+  // 15 dakika geçmediyse skip
+  if (Date.now() - lastBulkFetch < CACHE_TTL && lastBulkFetch > 0) {
+    console.log('[Bulk Fetch] Cache still valid, skipping...');
+    return;
+  }
+  
+  bulkFetchInProgress = true;
+  console.log('🔄 [Bulk Fetch] Fetching all BIST30 data...');
+  
+  const interval = "1d";
+  const period = "3mo";
+  let successCount = 0;
+  
+  for (const ticker of BIST30_TICKERS) {
+    try {
+      await waitForRateLimit();
+      
+      // Stock Data + Indicators birlikte
+      const [stockRes, indRes] = await Promise.all([
+        apiClient.get(`/stocks/${ticker}/data`, { params: { interval, period } }).catch(() => null),
+        apiClient.get(`/stocks/${ticker}/indicators`, { params: { interval, period } }).catch(() => null)
+      ]);
+      
+      if (stockRes?.data) {
+        setCache(`stockData:${ticker}:${interval}:${period}`, stockRes.data);
+      }
+      if (indRes?.data) {
+        setCache(`indicators:${ticker}:${interval}:${period}`, indRes.data);
+      }
+      
+      successCount++;
+      
+    } catch (err) {
+      console.warn(`⚠️ ${ticker} fetch failed`);
+    }
+  }
+  
+  lastBulkFetch = Date.now();
+  bulkFetchInProgress = false;
+  console.log(`✅ [Bulk Fetch] Complete! ${successCount}/${BIST30_TICKERS.length} stocks cached for 15 minutes.`);
+};
+
+// Sayfa yüklendiğinde ve her 15 dakikada bir çalıştır
+if (typeof window !== 'undefined') {
+  // 3 saniye sonra başlat (sayfa yüklenmesini bekle)
+  setTimeout(() => fetchAllStocksData(), 3000);
+  
+  // Her 15 dakikada bir tekrarla
+  setInterval(() => fetchAllStocksData(), CACHE_TTL);
+}
+
+export { fetchAllStocksData, BIST30_TICKERS, apiClient };
 export default api;

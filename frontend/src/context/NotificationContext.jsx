@@ -173,7 +173,7 @@ export const NotificationProvider = ({ children }) => {
     }
   };
 
-  // Periyodik kontrol (30 saniye)
+  // Periyodik kontrol (5 dakika - rate limit için)
   useEffect(() => {
     loadStats();
     checkNotifications();
@@ -181,7 +181,7 @@ export const NotificationProvider = ({ children }) => {
 
     const interval = setInterval(() => {
       checkNotifications();
-    }, 30000); // 30 saniye
+    }, 5 * 60 * 1000); // 5 dakika
 
     return () => clearInterval(interval);
   }, [checkNotifications]);

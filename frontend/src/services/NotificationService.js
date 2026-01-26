@@ -107,10 +107,10 @@ class NotificationService {
     // İlk kontrol
     this.checkAlerts();
 
-    // Her 30 saniyede bir kontrol et
+    // Her 5 dakikada bir kontrol et (rate limit için)
     this.checkInterval = setInterval(() => {
       this.checkAlerts();
-    }, 30000);
+    }, 5 * 60 * 1000);
 
     console.log('Alert polling started');
   }

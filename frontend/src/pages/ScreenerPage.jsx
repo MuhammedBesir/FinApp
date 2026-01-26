@@ -75,8 +75,8 @@ const ScreenerPage = () => {
 
   useEffect(() => {
     fetchStocks();
-    // Her 2 dakikada bir güncelle
-    const interval = setInterval(fetchStocks, 2 * 60 * 1000);
+    // Her 15 dakikada bir güncelle (rate limit için)
+    const interval = setInterval(fetchStocks, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 

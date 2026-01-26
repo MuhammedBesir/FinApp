@@ -104,8 +104,8 @@ const SignalCenterPage = () => {
 
   useEffect(() => {
     fetchSignals();
-    // Her 5 dakikada bir güncelle
-    const interval = setInterval(fetchSignals, 5 * 60 * 1000);
+    // Her 15 dakikada bir güncelle (rate limit için)
+    const interval = setInterval(fetchSignals, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [strategy]);
 
