@@ -1373,168 +1373,380 @@ async def get_signals():
 
 # ========== KRITIK: Günlük Fırsatlar için Eksik Endpoint'ler ==========
 
+# Cache for daily picks (5 dakika)
+daily_picks_cache = {"data": None, "timestamp": None}
+
+async def analyze_stock_for_picks(symbol: str) -> dict:
+    """Tek hisse analizi - paralel çalıştırmak için"""
+    try:
+        # Hızlı Yahoo Finance isteği
+        ticker_obj = yf.Ticker(symbol)
+        hist = ticker_obj.history(period="3mo", timeout=3)
+        
+        if hist.empty or len(hist) < 20:
+            return None
+        
+        closes = hist['Close'].tolist()
+        highs = hist['High'].tolist()
+        lows = hist['Low'].tolist()
+        volumes = hist['Volume'].tolist()
+        
+        curr = closes[-1]
+        
+        # EMA hesapla
+        def ema(data, period):
+            if len(data) < period:
+                return data[-1] if data else 0
+            mult = 2 / (period + 1)
+            result = sum(data[:period]) / period
+            for price in data[period:]:
+                result = (price * mult) + (result * (1 - mult))
+            return result
+        
+        ema9 = ema(closes, 9)
+        ema21 = ema(closes, 21)
+        ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
+        
+        # RSI hesapla
+        gains, losses = [], []
+        for i in range(1, min(15, len(closes))):
+            diff = closes[-i] - closes[-i-1]
+            if diff > 0:
+                gains.append(diff)
+            else:
+                losses.append(abs(diff))
+        
+        avg_gain = sum(gains) / 14 if gains else 0
+        avg_loss = sum(losses) / 14 if losses else 0.0001
+        rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
+        
+        # ATR hesapla
+        atr = curr * 0.025
+        if len(closes) >= 14 and len(highs) >= 14 and len(lows) >= 14:
+            trs = []
+            for i in range(-14, 0):
+                tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+                trs.append(tr)
+            atr = sum(trs) / len(trs)
+        
+        # Skor hesapla
+        score = 0
+        reasons = []
+        
+        if curr > ema9 > ema21:
+            score += 20
+            reasons.append("EMA trend pozitif (9>21)")
+        
+        if ema21 > ema50:
+            score += 15
+            reasons.append("Uzun vadeli trend pozitif (21>50)")
+        
+        if 35 <= rsi <= 65:
+            score += 20
+            reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
+        
+        vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
+        if volumes[-1] > vol_avg:
+            score += 15
+            reasons.append("Hacim ortalamanın üstünde")
+        
+        if len(lows) >= 10 and len(highs) >= 10:
+            swing_low = min(lows[-10:])
+            swing_high = max(highs[-10:])
+            pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
+            if 0.15 <= pos <= 0.55:
+                score += 15
+                reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
+        
+        if len(closes) >= 5:
+            momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
+            if 0 < momentum < 5:
+                score += 10
+                reasons.append(f"Pozitif momentum (+{momentum:.1f}%)")
+        
+        if score < 50:  # Daha düşük eşik, sonra sıralarız
+            return None
+        
+        stop = curr - (atr * 2.0)
+        risk = curr - stop
+        
+        if risk / curr < 0.015:
+            return None
+        
+        tp1 = curr + (risk * 2.5)
+        tp2 = curr + (risk * 4.0)
+        
+        return {
+            "ticker": symbol.replace(".IS", ""),
+            "entry_price": round(curr, 2),
+            "stop_loss": round(stop, 2),
+            "take_profit_1": round(tp1, 2),
+            "take_profit_2": round(tp2, 2),
+            "risk_reward_ratio": 2.5,
+            "risk_reward_2": 4.0,
+            "risk_pct": round((risk / curr) * 100, 2),
+            "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
+            "strength": score,
+            "confidence": min(score + 10, 100),
+            "signal": "BUY",
+            "sector": "BIST30",
+            "reasons": reasons,
+            "partial_exit_pct": 0.5,
+            "exit_strategy": {
+                "tp1_action": "TP1'de %50 pozisyon kapat",
+                "tp1_new_stop": "Break-even'a çek",
+                "tp2_action": "TP2'de kalan %50 kapat"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing {symbol}: {e}")
+        return None
+
 @app.get("/api/signals/daily-picks")
 async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
     """
     Günlük hisse önerileri - Hybrid Strategy v4
-    DailyPicksPage.jsx bu endpoint'i kullanıyor
+    Paralel istekler + cache ile optimize edildi
     """
+    global daily_picks_cache
+    
+    # Cache kontrolü (5 dakika)
+    if daily_picks_cache["data"] and daily_picks_cache["timestamp"]:
+        cache_age = (datetime.now() - daily_picks_cache["timestamp"]).total_seconds()
+        if cache_age < 300:  # 5 dakika
+            logger.info("Returning cached daily picks")
+            return daily_picks_cache["data"]
+    
     BIST30 = [
         'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
         'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
-        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS',
-        'FROTO.IS', 'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'AKSEN.IS'
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'FROTO.IS'
     ]
     
-    picks = []
+    # Paralel olarak tüm hisseleri analiz et (timeout ile)
+    import asyncio
     
-    for symbol in BIST30[:15]:  # İlk 15 hisse (hız için)
+    async def analyze_with_timeout(symbol):
         try:
-            data = await fetch_yahoo_quote(symbol)
-            if not data or data.get("isMockData"):
-                continue
-            
-            candles = data.get("candles", [])
-            if len(candles) < 20:
-                continue
-            
-            closes = [c["close"] for c in candles if c.get("close")]
-            highs = [c["high"] for c in candles if c.get("high")]
-            lows = [c["low"] for c in candles if c.get("low")]
-            volumes = [c["volume"] for c in candles if c.get("volume")]
-            
-            if len(closes) < 20:
-                continue
-            
-            curr = closes[-1]
-            
-            # EMA hesapla
-            def ema(data, period):
-                if len(data) < period:
-                    return data[-1] if data else 0
-                mult = 2 / (period + 1)
-                result = sum(data[:period]) / period
-                for price in data[period:]:
-                    result = (price * mult) + (result * (1 - mult))
-                return result
-            
-            ema9 = ema(closes, 9)
-            ema21 = ema(closes, 21)
-            ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
-            
-            # RSI hesapla
-            gains, losses = [], []
-            for i in range(1, min(15, len(closes))):
-                diff = closes[-i] - closes[-i-1]
-                if diff > 0:
-                    gains.append(diff)
-                else:
-                    losses.append(abs(diff))
-            
-            avg_gain = sum(gains) / 14 if gains else 0
-            avg_loss = sum(losses) / 14 if losses else 0.0001
-            rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
-            
-            # ATR hesapla
-            atr = curr * 0.025  # Basit yaklaşım: fiyatın %2.5'i
-            if len(closes) >= 14 and len(highs) >= 14 and len(lows) >= 14:
-                trs = []
-                for i in range(-14, 0):
-                    tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
-                    trs.append(tr)
-                atr = sum(trs) / len(trs)
-            
-            # Skor hesapla (Hybrid Strategy v4 - Backtest ile senkronize)
-            score = 0
-            reasons = []
-            
-            # 1. EMA Trend (Backtest: curr > ema9 > ema21 = +20)
-            if curr > ema9 > ema21:
-                score += 20
-                reasons.append("EMA trend pozitif (9>21)")
-            
-            # 2. Uzun Vadeli Trend (Backtest: ema21 > ema50 = +15)
-            if ema21 > ema50:
-                score += 15
-                reasons.append("Uzun vadeli trend pozitif (21>50)")
-            
-            # 3. RSI Nötr Bölge (Backtest: 35 <= rsi <= 65 = +20)
-            if 35 <= rsi <= 65:
-                score += 20
-                reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
-            
-            # 4. Hacim Kontrolü (Backtest: vol > vol_avg = +15)
-            vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
-            if volumes[-1] > vol_avg:
-                score += 15
-                reasons.append("Hacim ortalamanın üstünde")
-            
-            # 5. Pozisyon analizi (Backtest: 0.15 <= pos <= 0.55 = +15)
-            if len(lows) >= 10 and len(highs) >= 10:
-                swing_low = min(lows[-10:])
-                swing_high = max(highs[-10:])
-                pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
-                if 0.15 <= pos <= 0.55:
+            return await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    lambda: asyncio.run(analyze_stock_for_picks(symbol)) if asyncio.iscoroutinefunction(analyze_stock_for_picks) else None
+                ),
+                timeout=3.0
+            )
+        except:
+            # Senkron çalıştır
+            try:
+                ticker_obj = yf.Ticker(symbol)
+                hist = ticker_obj.history(period="3mo", timeout=2)
+                if hist.empty or len(hist) < 20:
+                    return None
+                
+                closes = hist['Close'].tolist()
+                highs = hist['High'].tolist()
+                lows = hist['Low'].tolist()
+                volumes = hist['Volume'].tolist()
+                curr = closes[-1]
+                
+                def ema(data, period):
+                    if len(data) < period:
+                        return data[-1] if data else 0
+                    mult = 2 / (period + 1)
+                    result = sum(data[:period]) / period
+                    for price in data[period:]:
+                        result = (price * mult) + (result * (1 - mult))
+                    return result
+                
+                ema9 = ema(closes, 9)
+                ema21 = ema(closes, 21)
+                ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
+                
+                gains, losses = [], []
+                for i in range(1, min(15, len(closes))):
+                    diff = closes[-i] - closes[-i-1]
+                    if diff > 0:
+                        gains.append(diff)
+                    else:
+                        losses.append(abs(diff))
+                
+                avg_gain = sum(gains) / 14 if gains else 0
+                avg_loss = sum(losses) / 14 if losses else 0.0001
+                rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
+                
+                atr = curr * 0.025
+                score = 0
+                reasons = []
+                
+                if curr > ema9 > ema21:
+                    score += 20
+                    reasons.append("EMA trend pozitif (9>21)")
+                if ema21 > ema50:
                     score += 15
-                    reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
-            
-            # 6. Momentum (Ek filtre - opsiyonel bonus)
-            if len(closes) >= 5:
-                momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
-                if 0 < momentum < 5:
-                    score += 10
-                    reasons.append(f"Pozitif momentum (+{momentum:.1f}%)")
-            
-            # Minimum skor kontrolü (Backtest: 60)
-            if score < 60:
-                continue
-            
-            # Stop ve TP hesapla (Backtest ile aynı)
-            stop = curr - (atr * 2.0)
-            risk = curr - stop
-            
-            # Minimum risk kontrolü (Backtest'teki gibi)
-            if risk / curr < 0.015:
-                continue  # Risk çok düşük, geçerli sinyal değil
-            
-            tp1 = curr + (risk * 2.5)
-            tp2 = curr + (risk * 4.0)
-            
-            picks.append({
-                "ticker": symbol.replace(".IS", ""),
-                "entry_price": round(curr, 2),
-                "stop_loss": round(stop, 2),
-                "take_profit_1": round(tp1, 2),
-                "take_profit_2": round(tp2, 2),
-                "risk_reward_ratio": 2.5,
-                "risk_reward_2": 4.0,
-                "risk_pct": round((risk / curr) * 100, 2),
-                "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
-                "strength": score,
-                "confidence": min(score + 10, 100),
-                "signal": "BUY",
-                "sector": "BIST30",
-                "reasons": reasons,
-                "partial_exit_pct": 0.5,
-                "exit_strategy": {
-                    "tp1_action": "TP1'de %50 pozisyon kapat",
-                    "tp1_new_stop": "Break-even'a çek",
-                    "tp2_action": "TP2'de kalan %50 kapat"
+                    reasons.append("Uzun vadeli trend pozitif (21>50)")
+                if 35 <= rsi <= 65:
+                    score += 20
+                    reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
+                
+                vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
+                if volumes[-1] > vol_avg:
+                    score += 15
+                    reasons.append("Hacim ortalamanın üstünde")
+                
+                if score < 50:
+                    return None
+                
+                stop = curr - (atr * 2.0)
+                risk = curr - stop
+                if risk / curr < 0.015:
+                    return None
+                
+                tp1 = curr + (risk * 2.5)
+                tp2 = curr + (risk * 4.0)
+                
+                return {
+                    "ticker": symbol.replace(".IS", ""),
+                    "entry_price": round(curr, 2),
+                    "stop_loss": round(stop, 2),
+                    "take_profit_1": round(tp1, 2),
+                    "take_profit_2": round(tp2, 2),
+                    "risk_reward_ratio": 2.5,
+                    "risk_reward_2": 4.0,
+                    "risk_pct": round((risk / curr) * 100, 2),
+                    "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
+                    "strength": score,
+                    "confidence": min(score + 10, 100),
+                    "signal": "BUY",
+                    "sector": "BIST30",
+                    "reasons": reasons,
+                    "partial_exit_pct": 0.5,
+                    "exit_strategy": {
+                        "tp1_action": "TP1'de %50 pozisyon kapat",
+                        "tp1_new_stop": "Break-even'a çek",
+                        "tp2_action": "TP2'de kalan %50 kapat"
+                    }
                 }
-            })
-            
-        except Exception as e:
-            logger.error(f"Error analyzing {symbol}: {e}")
-            continue
+            except Exception as e:
+                logger.error(f"Sync analyze error {symbol}: {e}")
+                return None
+    
+    # ThreadPoolExecutor ile paralel çalıştır
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    picks = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(lambda s=sym: yf.Ticker(s).history(period="3mo", timeout=2), sym): sym for sym in BIST30[:10]}
+        
+        for future in as_completed(futures, timeout=7):
+            symbol = futures[future]
+            try:
+                hist = future.result()
+                if hist.empty or len(hist) < 20:
+                    continue
+                
+                closes = hist['Close'].tolist()
+                highs = hist['High'].tolist()
+                lows = hist['Low'].tolist()
+                volumes = hist['Volume'].tolist()
+                curr = closes[-1]
+                
+                def ema(data, period):
+                    if len(data) < period:
+                        return data[-1] if data else 0
+                    mult = 2 / (period + 1)
+                    result = sum(data[:period]) / period
+                    for price in data[period:]:
+                        result = (price * mult) + (result * (1 - mult))
+                    return result
+                
+                ema9 = ema(closes, 9)
+                ema21 = ema(closes, 21)
+                ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
+                
+                gains, losses = [], []
+                for i in range(1, min(15, len(closes))):
+                    diff = closes[-i] - closes[-i-1]
+                    if diff > 0:
+                        gains.append(diff)
+                    else:
+                        losses.append(abs(diff))
+                
+                avg_gain = sum(gains) / 14 if gains else 0
+                avg_loss = sum(losses) / 14 if losses else 0.0001
+                rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
+                
+                atr = curr * 0.025
+                score = 0
+                reasons = []
+                
+                if curr > ema9 > ema21:
+                    score += 20
+                    reasons.append("EMA trend pozitif (9>21)")
+                if ema21 > ema50:
+                    score += 15
+                    reasons.append("Uzun vadeli trend pozitif (21>50)")
+                if 35 <= rsi <= 65:
+                    score += 20
+                    reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
+                
+                vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
+                if volumes[-1] > vol_avg:
+                    score += 15
+                    reasons.append("Hacim ortalamanın üstünde")
+                
+                if len(lows) >= 10 and len(highs) >= 10:
+                    swing_low = min(lows[-10:])
+                    swing_high = max(highs[-10:])
+                    pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
+                    if 0.15 <= pos <= 0.55:
+                        score += 15
+                        reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
+                
+                if score < 50:
+                    continue
+                
+                stop = curr - (atr * 2.0)
+                risk = curr - stop
+                if risk / curr < 0.015:
+                    continue
+                
+                tp1 = curr + (risk * 2.5)
+                tp2 = curr + (risk * 4.0)
+                
+                picks.append({
+                    "ticker": symbol.replace(".IS", ""),
+                    "entry_price": round(curr, 2),
+                    "stop_loss": round(stop, 2),
+                    "take_profit_1": round(tp1, 2),
+                    "take_profit_2": round(tp2, 2),
+                    "risk_reward_ratio": 2.5,
+                    "risk_reward_2": 4.0,
+                    "risk_pct": round((risk / curr) * 100, 2),
+                    "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
+                    "strength": score,
+                    "confidence": min(score + 10, 100),
+                    "signal": "BUY",
+                    "sector": "BIST30",
+                    "reasons": reasons,
+                    "partial_exit_pct": 0.5,
+                    "exit_strategy": {
+                        "tp1_action": "TP1'de %50 pozisyon kapat",
+                        "tp1_new_stop": "Break-even'a çek",
+                        "tp2_action": "TP2'de kalan %50 kapat"
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error processing {symbol}: {e}")
+                continue
     
     # Score'a göre sırala
     picks.sort(key=lambda x: x["strength"], reverse=True)
     top_picks = picks[:max_picks]
     
-    return {
+    result = {
         "status": "success",
         "picks": top_picks,
-        "total_scanned": len(BIST30[:15]),
+        "total_scanned": 10,
         "found": len(picks),
         "strategy_info": {
             "name": "Hybrid Strategy v4",
@@ -1546,6 +1758,12 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
         "warnings": [],
         "timestamp": datetime.now().isoformat()
     }
+    
+    # Cache'e kaydet
+    daily_picks_cache["data"] = result
+    daily_picks_cache["timestamp"] = datetime.now()
+    
+    return result
 
 @app.get("/api/signals/saved-picks")
 async def get_saved_picks():
