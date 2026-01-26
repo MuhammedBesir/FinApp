@@ -26,29 +26,13 @@ try:
     from sqlalchemy.ext.declarative import declarative_base
     from sqlalchemy.orm import sessionmaker, Session
     from sqlalchemy.pool import QueuePool
-    import ssl
     
     DATABASE_URL = os.getenv("DATABASE_URL", "")
     
     if DATABASE_URL:
-        # Fix URL format for SQLAlchemy with pg8000 driver
+        # Fix URL format for SQLAlchemy (Neon uses postgres:// but SQLAlchemy needs postgresql://)
         if DATABASE_URL.startswith("postgres://"):
-            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
-        elif DATABASE_URL.startswith("postgresql://") and "+pg8000" not in DATABASE_URL:
-            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
-        
-        # Remove sslmode from URL (pg8000 doesn't support it as URL parameter)
-        if "sslmode=" in DATABASE_URL:
-            # Remove sslmode parameter
-            import re
-            DATABASE_URL = re.sub(r'[\?&]sslmode=[^&]*', '', DATABASE_URL)
-            # Clean up URL if needed
-            DATABASE_URL = DATABASE_URL.replace('?&', '?').rstrip('?')
-        
-        # Create SSL context for pg8000
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
+            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
         
         engine = create_engine(
             DATABASE_URL,
@@ -57,8 +41,7 @@ try:
             max_overflow=5,
             pool_timeout=30,
             pool_recycle=300,
-            pool_pre_ping=True,
-            connect_args={"ssl_context": ssl_context}
+            pool_pre_ping=True
         )
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         DB_AVAILABLE = True
