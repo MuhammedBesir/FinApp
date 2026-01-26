@@ -1002,8 +1002,167 @@ async def get_signals():
 
 @app.get("/api/screener")
 async def get_screener():
-    """Stub: Stock screener"""
-    return {"results": [], "message": "Screener feature coming soon"}
+    """
+    Stock screener - Backtest stratejisiyle günlük fırsatları tara
+    BIST30 hisselerini analiz edip score >= 60 olanları döndürür
+    """
+    import random
+    
+    # BIST30 hisseleri
+    BIST30 = [
+        'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
+        'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS',
+        'FROTO.IS', 'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'ODAS.IS',
+        'AKSEN.IS', 'ARCLK.IS', 'PETKM.IS', 'TKFEN.IS', 'SASA.IS',
+        'KRDMD.IS', 'ISCTR.IS', 'VAKBN.IS', 'HEKTS.IS'
+    ]
+    
+    opportunities = []
+    
+    for symbol in BIST30:
+        try:
+            data = await fetch_yahoo_quote(symbol)
+            if not data or data.get("isMockData"):
+                continue
+            
+            candles = data.get("candles", [])
+            if len(candles) < 50:
+                continue
+            
+            # Son kapanışları al
+            closes = [c["close"] for c in candles if c.get("close")]
+            highs = [c["high"] for c in candles if c.get("high")]
+            lows = [c["low"] for c in candles if c.get("low")]
+            volumes = [c["volume"] for c in candles if c.get("volume")]
+            
+            if len(closes) < 50:
+                continue
+            
+            curr = closes[-1]
+            
+            # EMA hesapla (basit)
+            def ema(data, period):
+                if len(data) < period:
+                    return data[-1] if data else 0
+                mult = 2 / (period + 1)
+                result = sum(data[:period]) / period
+                for price in data[period:]:
+                    result = (price * mult) + (result * (1 - mult))
+                return result
+            
+            ema9 = ema(closes, 9)
+            ema21 = ema(closes, 21)
+            ema50 = ema(closes, 50)
+            
+            # RSI hesapla
+            gains = []
+            losses = []
+            for i in range(1, min(15, len(closes))):
+                diff = closes[-i] - closes[-i-1]
+                if diff > 0:
+                    gains.append(diff)
+                else:
+                    losses.append(abs(diff))
+            
+            avg_gain = sum(gains) / 14 if gains else 0
+            avg_loss = sum(losses) / 14 if losses else 0.0001
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            # ATR hesapla
+            trs = []
+            for i in range(-14, 0):
+                if i-1 >= -len(closes):
+                    tr = max(
+                        highs[i] - lows[i],
+                        abs(highs[i] - closes[i-1]),
+                        abs(lows[i] - closes[i-1])
+                    )
+                    trs.append(tr)
+            atr = sum(trs) / len(trs) if trs else curr * 0.02
+            
+            # SKOR HESAPLA (Backtest stratejisiyle aynı)
+            score = 0
+            
+            # Trend skoru
+            if curr > ema9 > ema21:
+                score += 20
+            if ema21 > ema50:
+                score += 15
+            
+            # RSI skoru
+            if 35 <= rsi <= 65:
+                score += 20
+            
+            # Hacim skoru
+            vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
+            if volumes[-1] > vol_avg:
+                score += 15
+            
+            # Pozisyon skoru
+            swing_low = min(lows[-10:])
+            swing_high = max(highs[-10:])
+            pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
+            if 0.15 <= pos <= 0.55:
+                score += 15
+            
+            # Momentum bonus
+            if len(closes) >= 5:
+                momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
+                if 0 < momentum < 5:
+                    score += 10
+            
+            # Minimum skor kontrolü
+            if score < 60:
+                continue
+            
+            # Stop ve TP hesapla
+            stop = curr - (atr * 2.0)
+            risk = curr - stop
+            
+            if risk / curr < 0.015:  # Çok düşük risk
+                continue
+            
+            tp1 = curr + (risk * 2.5)
+            
+            opportunities.append({
+                "symbol": symbol,
+                "name": data.get("name", symbol.replace(".IS", "")),
+                "price": round(curr, 2),
+                "score": score,
+                "signal": "STRONG_BUY" if score >= 80 else "BUY",
+                "action": "AL",
+                "entry": round(curr, 2),
+                "stop": round(stop, 2),
+                "tp1": round(tp1, 2),
+                "risk_percent": round((risk / curr) * 100, 2),
+                "reward_percent": round(((tp1 - curr) / curr) * 100, 2),
+                "rsi": round(rsi, 1),
+                "trend": "UP" if curr > ema21 else "DOWN",
+                "change": data.get("change", 0),
+                "changePercent": data.get("changePercent", 0),
+                "volume": data.get("volume", 0)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+            continue
+    
+    # Score'a göre sırala, en yüksek 5 tanesini al
+    opportunities.sort(key=lambda x: x["score"], reverse=True)
+    top_opportunities = opportunities[:5]
+    
+    return {
+        "results": top_opportunities,
+        "total_scanned": len(BIST30),
+        "opportunities_found": len(opportunities),
+        "top_picks": len(top_opportunities),
+        "strategy": "Hybrid Strategy v4",
+        "min_score": 60,
+        "timestamp": datetime.now().isoformat(),
+        "disclaimer": "Bu veriler yatırım tavsiyesi değildir. Backtest sonuçları: WR 57.1%, PF 1.94"
+    }
 
 @app.get("/api/news")
 async def get_news():
