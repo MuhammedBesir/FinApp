@@ -1066,6 +1066,12 @@ async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = 
 @app.get("/api/signals/{symbol}")
 async def get_stock_signals(symbol: str, strategy: str = "hybrid"):
     """Get trading signals for a stock"""
+    # Özel endpoint'leri wildcard'dan koru - bunları ayrı endpoint'ler yönetiyor
+    if symbol == "daily-picks":
+        return await get_daily_picks(strategy=strategy)
+    elif symbol == "saved-picks":
+        return await get_saved_picks(strategy=strategy)
+    
     if not symbol.endswith(".IS") and not "." in symbol:
         symbol = f"{symbol}.IS"
     
