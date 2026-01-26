@@ -7,7 +7,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 export const useStore = create(
   subscribeWithSelector((set, get) => ({
     // Selected ticker and settings
-    selectedTicker: "TRALT.IS",
+    selectedTicker: "THYAO.IS",  // Default to THY (more stable on Yahoo Finance)
     strategy: "moderate",
     interval: "1d",
     period: "3mo",

@@ -56,7 +56,7 @@ class DataFetcher:
     def __init__(self):
         """Initialize the data fetcher"""
         self.cache = DataFetcher._shared_cache  # Use shared cache
-        self.cache_ttl: int = 120  # seconds - increased for better performance
+        self.cache_ttl: int = 300  # 5 minutes - prevents Yahoo Finance rate limiting
         self.use_mock_data = os.getenv("VERCEL") == "1"  # Use mock data on Vercel
         
         # BIST 30 + Altın hisseleri

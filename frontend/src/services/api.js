@@ -1,11 +1,48 @@
 /**
  * API Client for Trading Bot Backend
  * Handles all HTTP requests to the FastAPI backend
+ * With built-in caching to prevent rate limiting (429)
  */
 import axios from "axios";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "/api";
+
+// ============ API Cache ============
+const API_CACHE = new Map();
+const CACHE_TTL = 60 * 1000; // 60 seconds cache
+const RATE_LIMIT_DELAY = 500; // 500ms between requests
+let lastRequestTime = 0;
+
+// Cache helper functions
+const getCached = (key) => {
+  const cached = API_CACHE.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`[API Cache] HIT: ${key}`);
+    return cached.data;
+  }
+  return null;
+};
+
+const setCache = (key, data) => {
+  API_CACHE.set(key, { data, timestamp: Date.now() });
+  // Clean old cache entries
+  if (API_CACHE.size > 100) {
+    const oldest = [...API_CACHE.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+    API_CACHE.delete(oldest[0]);
+  }
+};
+
+// Rate limit helper
+const waitForRateLimit = async () => {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
+    await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY - timeSinceLastRequest));
+  }
+  lastRequestTime = Date.now();
+};
 
 // Safety check: If API_URL is localhost but we are in production, force relative path
 if (API_BASE_URL.includes('localhost') && typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
@@ -234,45 +271,81 @@ export const portfolioApi = {
 };
 
 export const api = {
-  // Stock Data
+  // Stock Data (with cache)
   getStockData: async (ticker, interval = "5m", period = "1d") => {
+    const cacheKey = `stockData:${ticker}:${interval}:${period}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+    
+    await waitForRateLimit();
     const response = await apiClient.get(`/stocks/${ticker}/data`, {
       params: { interval, period },
     });
+    setCache(cacheKey, response.data);
     return response.data;
   },
 
-  // Technical Indicators
+  // Technical Indicators (with cache)
   getIndicators: async (ticker, interval = "5m", period = "1d") => {
+    const cacheKey = `indicators:${ticker}:${interval}:${period}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+    
+    await waitForRateLimit();
     const response = await apiClient.get(`/stocks/${ticker}/indicators`, {
       params: { interval, period },
     });
+    setCache(cacheKey, response.data);
     return response.data;
   },
 
-  // Stock Info
+  // Stock Info (with cache - longer TTL)
   getStockInfo: async (ticker) => {
+    const cacheKey = `stockInfo:${ticker}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+    
+    await waitForRateLimit();
     const response = await apiClient.get(`/stocks/${ticker}/info`);
+    setCache(cacheKey, response.data);
     return response.data;
   },
 
-  // Current Price
+  // Current Price (with short cache)
   getCurrentPrice: async (ticker) => {
+    const cacheKey = `price:${ticker}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+    
+    await waitForRateLimit();
     const response = await apiClient.get(`/stocks/${ticker}/current-price`);
+    setCache(cacheKey, response.data);
     return response.data;
   },
 
-  // Trading Signals
+  // Trading Signals (with cache)
   getSignals: async (
     ticker,
     strategy = "moderate",
     interval = "5m",
     period = "1d",
   ) => {
+    const cacheKey = `signals:${ticker}:${strategy}:${interval}:${period}`;
+    const cached = getCached(cacheKey);
+    if (cached) return cached;
+    
+    await waitForRateLimit();
     const response = await apiClient.get(`/signals/${ticker}`, {
       params: { strategy, interval, period },
     });
+    setCache(cacheKey, response.data);
     return response.data;
+  },
+  
+  // Clear cache (useful after trading actions)
+  clearCache: () => {
+    API_CACHE.clear();
+    console.log('[API Cache] Cleared');
   },
 
   // Backtesting
