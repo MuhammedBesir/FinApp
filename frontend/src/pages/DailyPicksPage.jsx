@@ -1,6 +1,7 @@
 /**
  * Günün Fırsatları - V2+V3 HYBRID STRATEJİ
- * Win Rate: %62-70 | Profit Factor: 2.5+ | Partial Exit Enabled
+ * Win Rate: %57+ | Profit Factor: 1.94 | Partial Exit Enabled
+ * Her gün 18:30'da otomatik tarama yapılır
  */
 import React, { useState, useEffect } from "react";
 import axios from "axios";
@@ -21,6 +22,7 @@ import {
   X,
   Info,
   Eye,
+  Clock,
 } from "lucide-react";
 import StockPickCard from "../components/Dashboard/StockPickCard";
 import { usePortfolioStore } from "../store/portfolioStore";
@@ -42,28 +44,56 @@ const useIsMobile = () => {
 const DailyPicksPage = () => {
   const isMobile = useIsMobile();
   
-
-
   const [morningPicks, setMorningPicks] = useState(null);
   const [dayTradeStatus, setDayTradeStatus] = useState(null);
   const [strategyInfo, setStrategyInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedPick, setSelectedPick] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [scanInfo, setScanInfo] = useState(null); // Tarama zamanı bilgisi
   const { watchlist, addToWatchlist, removeFromWatchlist } = usePortfolioStore();
 
   const fetchMorningPicks = async () => {
     try {
       setLoading(true);
-      // V2+V3 Hybrid Strategy Endpoint
-      const response = await axios.get(
-        `/api/signals/daily-picks?strategy=hybrid&max_picks=5`
-      );
       
-      const picks = response.data.picks || [];
-      const stratInfo = response.data.strategy_info || {};
-      const warnings = response.data.warnings || [];
-      const marketTrend = response.data.market_trend || response.data.market_status?.market_trend || "YUKSELIS";
+      // Önce kaydedilmiş günlük önerileri kontrol et (18:30 taraması)
+      let picks = [];
+      let stratInfo = {};
+      let warnings = [];
+      let marketTrend = "YUKSELIS";
+      let usedSavedPicks = false;
+      
+      try {
+        const savedResponse = await axios.get('/api/signals/saved-picks');
+        if (savedResponse.data.status === 'success' && savedResponse.data.picks?.length > 0) {
+          // Kaydedilmiş veri var, bunu kullan
+          picks = savedResponse.data.picks || [];
+          warnings = savedResponse.data.market_warnings || [];
+          usedSavedPicks = true;
+          setScanInfo({
+            date: savedResponse.data.date,
+            scan_time: savedResponse.data.scan_time,
+            strategy_version: savedResponse.data.strategy_version
+          });
+          console.log("📊 Kaydedilmiş günlük öneriler yüklendi:", savedResponse.data.date);
+        }
+      } catch (err) {
+        console.log("Saved picks not available, using live scan");
+      }
+      
+      // Kaydedilmiş veri yoksa veya boşsa, canlı tarama yap
+      if (!usedSavedPicks || picks.length === 0) {
+        const response = await axios.get(
+          `/api/signals/daily-picks?strategy=hybrid&max_picks=5`
+        );
+        
+        picks = response.data.picks || [];
+        stratInfo = response.data.strategy_info || {};
+        warnings = response.data.warnings || [];
+        marketTrend = response.data.market_trend || response.data.market_status?.market_trend || "YUKSELIS";
+        setScanInfo(null);
+      }
       
       setStrategyInfo({...stratInfo, warnings, marketTrend});
       
@@ -252,7 +282,7 @@ const DailyPicksPage = () => {
                 <span className="truncate">Günün Fırsatları</span>
               </h2>
               <p className="text-[10px] sm:text-xs md:text-sm text-theme-muted truncate">
-                V2+V3 Hybrid | WR: %62-70 | PF: 2.5+ | Min Skor: 75 | Partial Exit
+                V2+V3 Hybrid | WR: %57+ | PF: 1.94 | Min Skor: 60 | Partial Exit
               </p>
             </div>
             
@@ -264,6 +294,17 @@ const DailyPicksPage = () => {
               <span className="hidden sm:inline">Yenile</span>
             </button>
           </div>
+          
+          {/* Tarama Zamanı Bilgisi */}
+          {scanInfo && (
+            <div className="flex items-center gap-2 text-xs text-theme-muted bg-primary/5 px-3 py-1.5 rounded-lg">
+              <Clock className="w-3.5 h-3.5" />
+              <span>
+                📊 Son tarama: {scanInfo.date} {scanInfo.scan_time?.split(' ')[1] || ''} 
+                <span className="ml-2 text-primary">({scanInfo.strategy_version})</span>
+              </span>
+            </div>
+          )}
         </div>
 
       </div>

@@ -1,6 +1,7 @@
 """
 Signal generation API endpoints - V2+V3 HYBRID STRATEGY INTEGRATED
 Günde 1 kez çalışır, max 5 sinyal, sektör çeşitlendirmesi aktif
+Her gün 18:30'da otomatik tarama yapılır ve sonuçlar kaydedilir
 """
 from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, date
@@ -9,6 +10,7 @@ from app.services.data_fetcher import DataFetcher
 from app.services.technical_analysis import TechnicalAnalysis
 from app.services.signal_generator import SignalGenerator
 from app.services.hybrid_strategy import HybridSignalGenerator, HybridRiskManagement
+from app.services.stock_scheduler import stock_scheduler
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -60,6 +62,104 @@ async def get_market_status():
         }
     except Exception as e:
         logger.error(f"Error getting market status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/scheduler-status")
+async def get_scheduler_status():
+    """
+    Get stock scheduler status
+    Shows when the daily scan runs (18:30) and last results
+    """
+    try:
+        status = stock_scheduler.get_status()
+        latest = stock_scheduler.get_latest_picks()
+        
+        return {
+            "scheduler": status,
+            "latest_scan": {
+                "date": latest.get('date') if latest else None,
+                "scan_time": latest.get('scan_time') if latest else None,
+                "picks_count": latest.get('total_picks', 0) if latest else 0
+            },
+            "next_scan_info": "Her gün 18:30'da (piyasa kapanışından sonra)"
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/saved-picks")
+async def get_saved_daily_picks():
+    """
+    🎯 Kaydedilmiş günlük önerileri döndür
+    
+    Her gün 18:30'da otomatik tarama yapılır ve sonuçlar kaydedilir.
+    Bu endpoint en son kaydedilen sonuçları döndürür.
+    """
+    try:
+        latest = stock_scheduler.get_latest_picks()
+        
+        if not latest:
+            return {
+                "status": "no_data",
+                "message": "Henüz kaydedilmiş günlük öneri yok. İlk tarama 18:30'da yapılacak.",
+                "picks": []
+            }
+        
+        return {
+            "status": "success",
+            "date": latest.get('date'),
+            "scan_time": latest.get('scan_time'),
+            "picks": latest.get('picks', []),
+            "total_picks": latest.get('total_picks', 0),
+            "market_warnings": latest.get('market_warnings', []),
+            "strategy_version": latest.get('strategy_version', 'v4_optimized')
+        }
+    except Exception as e:
+        logger.error(f"Error getting saved picks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/picks-history")
+async def get_picks_history(
+    days: int = Query(7, description="Son kaç gün (max 30)")
+):
+    """
+    Son N günün öneri geçmişini döndür
+    """
+    try:
+        days = min(days, 30)  # Max 30 gün
+        history = stock_scheduler.get_picks_history(days)
+        
+        return {
+            "status": "success",
+            "days_requested": days,
+            "days_available": len(history),
+            "history": history
+        }
+    except Exception as e:
+        logger.error(f"Error getting picks history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-scan-now")
+async def run_scan_now():
+    """
+    Manuel olarak taramayı şimdi çalıştır (test amaçlı)
+    """
+    try:
+        logger.info("🔄 Manual scan requested...")
+        result = await stock_scheduler.run_now()
+        
+        return {
+            "status": "success",
+            "message": "Tarama tamamlandı ve kaydedildi",
+            "picks_count": len(result.get('picks', [])) if result else 0,
+            "scan_time": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error running manual scan: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

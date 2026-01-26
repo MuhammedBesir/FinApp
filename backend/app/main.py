@@ -16,6 +16,7 @@ from app.services.data_fetcher import DataFetcher
 from app.services.technical_analysis import TechnicalAnalysis
 from app.services.ipo_service import ipo_service
 from app.services.ipo_scheduler import setup_ipo_scheduler, start_ipo_scheduler, stop_ipo_scheduler
+from app.services.stock_scheduler import setup_stock_scheduler, start_stock_scheduler, stop_stock_scheduler, stock_scheduler
 from app.services.websocket_manager import ws_manager
 from app.utils.logger import logger
 from datetime import datetime, timezone
@@ -110,6 +111,84 @@ async def ipo_update_callback():
         raise
 
 
+# Stock Scan callback - Günlük hisse taraması
+async def stock_scan_callback():
+    """Günlük hisse taraması (scheduler tarafından çağrılır - 18:30)"""
+    try:
+        from app.services.hybrid_strategy import HybridSignalGenerator
+        
+        logger.info("📊 Stock Scheduler: Running daily scan...")
+        
+        BIST30 = [
+            "AKBNK.IS", "AKSEN.IS", "ARCLK.IS", "ASELS.IS", "BIMAS.IS",
+            "EKGYO.IS", "ENKAI.IS", "EREGL.IS", "FROTO.IS", "GARAN.IS",
+            "GUBRF.IS", "HEKTS.IS", "ISCTR.IS", "KCHOL.IS", "KRDMD.IS",
+            "ODAS.IS", "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SASA.IS",
+            "SISE.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS",
+            "TOASO.IS", "TUPRS.IS", "YKBNK.IS", "VAKBN.IS"
+        ]
+        
+        hybrid_generator = HybridSignalGenerator()
+        
+        # Market filter kontrolü
+        market_ok, market_msg = hybrid_generator.check_market_filter()
+        market_warnings = []
+        
+        if not market_ok:
+            market_warnings.append(f"⚠️ {market_msg} - DİKKATLİ OLUN!")
+        
+        # V2+V3 Hybrid tarama
+        result = hybrid_generator.scan_all_stocks(
+            tickers=BIST30,
+            period='3mo',
+            apply_booster=True,
+            force_run=True
+        )
+        
+        # Sinyalleri formatla
+        picks = []
+        for signal in result.get('signals', [])[:5]:  # Max 5 sinyal
+            entry = signal.get('entry_price', 0)
+            stop = signal.get('stop_loss', 0)
+            tp1 = signal.get('take_profit_1', 0)
+            tp2 = signal.get('take_profit_2', 0)
+            
+            risk_pct = abs((entry - stop) / entry * 100) if entry > 0 else 0
+            reward_pct_1 = abs((tp1 - entry) / entry * 100) if entry > 0 else 0
+            
+            picks.append({
+                "ticker": signal.get('ticker', ''),
+                "signal": "BUY",
+                "strength": signal.get('strength', 0),
+                "confidence": signal.get('confidence', 0),
+                "entry_price": round(entry, 2),
+                "stop_loss": round(stop, 2),
+                "take_profit_1": round(tp1, 2),
+                "take_profit_2": round(tp2, 2),
+                "risk_reward_ratio": signal.get('risk_reward_1', 2.5),
+                "sector": hybrid_generator.SECTOR_MAP.get(
+                    signal.get('ticker', '').replace('.IS', ''), 'Diğer'
+                ),
+                "reasons": signal.get('reasons', []),
+                "risk_pct": round(risk_pct, 2),
+                "reward_pct": round(reward_pct_1, 2)
+            })
+        
+        scan_result = {
+            "picks": picks,
+            "market_warnings": market_warnings,
+            "market_ok": market_ok,
+            "total_scanned": len(BIST30)
+        }
+        
+        logger.info(f"📊 Stock Scheduler: Scan completed - {len(picks)} picks")
+        return scan_result
+        
+    except Exception as e:
+        logger.error(f"❌ Stock Scheduler: Scan failed - {e}")
+        raise
+
+
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup"""
@@ -133,6 +212,14 @@ async def startup_event():
         logger.info("IPO Auto-Update Scheduler started")
     except Exception as e:
         logger.error(f"Failed to start IPO Scheduler: {e}")
+    
+    # Stock Scheduler'ı başlat (18:30 günlük tarama)
+    try:
+        setup_stock_scheduler(stock_scan_callback)
+        start_stock_scheduler()
+        logger.info("📊 Stock Scheduler started - Daily scan at 18:30")
+    except Exception as e:
+        logger.error(f"Failed to start Stock Scheduler: {e}")
 
 
 @app.on_event("shutdown")
@@ -146,6 +233,13 @@ async def shutdown_event():
         logger.info("IPO Scheduler stopped")
     except Exception as e:
         logger.error(f"Error stopping IPO Scheduler: {e}")
+    
+    # Stock Scheduler'ı durdur
+    try:
+        stop_stock_scheduler()
+        logger.info("📊 Stock Scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Stock Scheduler: {e}")
 
 
 @app.get("/")
