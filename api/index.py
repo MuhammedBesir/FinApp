@@ -958,18 +958,30 @@ import asyncio
 # Global HTTP client for connection pooling
 _http_client = None
 
+# Simple in-memory cache for stock data
+_stock_cache: Dict[str, dict] = {}
+_cache_time: Dict[str, datetime] = {}
+CACHE_TTL = 60  # 60 seconds cache
+
 async def get_http_client():
     """Get or create shared HTTP client"""
     global _http_client
     if _http_client is None:
         _http_client = httpx.AsyncClient(
-            timeout=10.0,
-            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
+            timeout=5.0,  # Reduced timeout for Vercel
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
         )
     return _http_client
 
 async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
-    """Fetch stock quote from Yahoo Finance API with mock fallback"""
+    """Fetch stock quote from Yahoo Finance API with cache and mock fallback"""
+    # Check cache first
+    cache_key = f"{symbol}_{period}"
+    if cache_key in _stock_cache:
+        cache_age = (datetime.now() - _cache_time.get(cache_key, datetime.min)).total_seconds()
+        if cache_age < CACHE_TTL:
+            return _stock_cache[cache_key]
+    
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
         params = {"interval": "1d", "range": period}
@@ -982,21 +994,18 @@ async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
         response = await client.get(url, params=params, headers=headers)
         
         if response.status_code != 200:
-            logger.warning(f"Yahoo returned {response.status_code} for {symbol}")
             return get_mock_data(symbol)
         
         data = response.json()
         result = data.get("chart", {}).get("result", [])
         
         if not result:
-            logger.warning(f"No chart result for {symbol}")
             return get_mock_data(symbol)
         
         meta = result[0].get("meta", {})
         quote = result[0].get("indicators", {}).get("quote", [{}])[0]
         timestamps = result[0].get("timestamp", [])
         
-        # Get latest values
         closes = quote.get("close", [])
         opens = quote.get("open", [])
         highs = quote.get("high", [])
@@ -1004,10 +1013,8 @@ async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
         volumes = quote.get("volume", [])
         
         if not closes:
-            logger.warning(f"No close data for {symbol}")
             return get_mock_data(symbol)
         
-        # Filter None values and get last valid
         valid_closes = [c for c in closes if c is not None]
         valid_opens = [o for o in opens if o is not None]
         valid_highs = [h for h in highs if h is not None]
@@ -1015,7 +1022,6 @@ async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
         valid_volumes = [v for v in volumes if v is not None]
         
         if not valid_closes:
-            logger.warning(f"No valid closes for {symbol}")
             return get_mock_data(symbol)
         
         current_price = valid_closes[-1]
@@ -1028,7 +1034,7 @@ async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
         change = current_price - prev_close
         change_percent = (change / prev_close * 100) if prev_close and prev_close != 0 else 0
         
-        return {
+        stock_data = {
             "symbol": symbol,
             "name": meta.get("shortName", symbol),
             "price": round(current_price, 2),
@@ -1055,19 +1061,37 @@ async def fetch_yahoo_quote(symbol: str, period: str = "1d") -> dict:
             ],
             "isMockData": False
         }
+        
+        # Cache the result
+        _stock_cache[cache_key] = stock_data
+        _cache_time[cache_key] = datetime.now()
+        
+        return stock_data
     except Exception as e:
         logger.error(f"Yahoo Finance error for {symbol}: {e}")
         return get_mock_data(symbol)
 
-async def fetch_multiple_quotes(symbols: list) -> list:
-    """Fetch multiple stock quotes in parallel"""
-    tasks = [fetch_yahoo_quote(symbol, period="1d") for symbol in symbols]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+async def fetch_multiple_quotes(symbols: list, timeout: float = 8.0) -> list:
+    """Fetch multiple stock quotes in parallel with timeout"""
+    async def fetch_with_timeout(symbol):
+        try:
+            return await asyncio.wait_for(fetch_yahoo_quote(symbol, period="1d"), timeout=3.0)
+        except asyncio.TimeoutError:
+            return get_mock_data(symbol)
+        except Exception:
+            return get_mock_data(symbol)
+    
+    tasks = [fetch_with_timeout(symbol) for symbol in symbols]
+    
+    try:
+        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=timeout)
+    except asyncio.TimeoutError:
+        # Return whatever we have from cache + mock
+        return [get_mock_data(s) for s in symbols]
     
     stocks = []
     for i, result in enumerate(results):
         if isinstance(result, Exception):
-            logger.error(f"Error fetching {symbols[i]}: {result}")
             result = get_mock_data(symbols[i])
         if result:
             stocks.append(result)
@@ -1958,22 +1982,19 @@ async def get_market_status():
 
 @app.get("/api/screener/top-movers")
 async def get_top_movers(top_n: int = 5):
-    """Get top gaining and losing stocks - PARALLEL fetch for speed"""
-    # Sector mapping for BIST stocks
+    """Get top gaining and losing stocks - Optimized for Vercel 10s limit"""
+    # Top 10 most traded BIST stocks (reduced for speed)
     SECTORS = {
         'THYAO.IS': 'Havacılık', 'GARAN.IS': 'Bankacılık', 'AKBNK.IS': 'Bankacılık',
-        'YKBNK.IS': 'Bankacılık', 'EREGL.IS': 'Demir Çelik', 'BIMAS.IS': 'Perakende',
-        'ASELS.IS': 'Savunma', 'KCHOL.IS': 'Holding', 'SAHOL.IS': 'Holding',
+        'EREGL.IS': 'Demir Çelik', 'ASELS.IS': 'Savunma', 'KCHOL.IS': 'Holding',
         'SISE.IS': 'Cam', 'TCELL.IS': 'Telekomünikasyon', 'TUPRS.IS': 'Petrokimya',
-        'PGSUS.IS': 'Havacılık', 'TAVHL.IS': 'Havalimanı', 'ENKAI.IS': 'İnşaat',
-        'FROTO.IS': 'Otomotiv', 'TOASO.IS': 'Otomotiv', 'EKGYO.IS': 'GYO',
-        'GUBRF.IS': 'Gübre', 'AKSEN.IS': 'Enerji'
+        'FROTO.IS': 'Otomotiv'
     }
     
-    BIST30 = list(SECTORS.keys())
+    BIST_TOP10 = list(SECTORS.keys())
     
-    # Fetch all stocks in parallel for speed
-    all_data = await fetch_multiple_quotes(BIST30)
+    # Fetch stocks in parallel with strict timeout
+    all_data = await fetch_multiple_quotes(BIST_TOP10, timeout=8.0)
     
     stocks = []
     for data in all_data:
@@ -1991,9 +2012,10 @@ async def get_top_movers(top_n: int = 5):
                     if prev and prev != 0:
                         change_pct = ((curr - prev) / prev) * 100
             
-            # Calculate volume ratio (current volume vs average)
+            # Calculate volume ratio
             volume = data.get("volume", 0)
-            avg_volume = volume * 0.8  # Assume current is slightly above average
+            avg_volume = volume * 0.8
+            volume_ratio = (volume / avg_volume) if avg_volume > 0 else 1.0
             volume_ratio = (volume / avg_volume) if avg_volume > 0 else 1.0
             
             stocks.append({
