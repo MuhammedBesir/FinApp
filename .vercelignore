@@ -1,0 +1,54 @@
+# Python virtual environments
+.venv/
+venv/
+backend/venv*/
+__pycache__/
+*.pyc
+*.pyo
+
+# Backend (sadece api/ klasörü Vercel'e gider)
+backend/
+!api/
+
+# Logs ve cache
+logs/
+*.log
+.cache/
+
+# Development files
+*.md
+*.txt
+!requirements.txt
+.git/
+.gitignore
+.python-version
+
+# Test files
+tests/
+*_test.py
+test_*.py
+*_backtest*.py
+conftest.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (frontend zaten buildCommand ile handle ediliyor)
+node_modules/
+
+# Build outputs (önceki buildler)
+dist/
+build/
+
+# Debug files
+debug_*.py
+*_debug.py
+api_result.json
+api_test_result.json
