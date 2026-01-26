@@ -391,6 +391,64 @@ async def get_knowledge(topic: str):
     
     raise HTTPException(status_code=404, detail="Topic not found")
 
+# ========== Stub Endpoints (Frontend compatibility) ==========
+# These return empty/mock data since heavy dependencies are removed
+
+@app.get("/api/alerts/statistics")
+async def alerts_statistics():
+    """Stub: Alert statistics"""
+    return {
+        "total": 0,
+        "active": 0,
+        "triggered": 0,
+        "by_type": {}
+    }
+
+@app.get("/api/alerts")
+async def get_alerts():
+    """Stub: Get alerts list"""
+    return {"alerts": [], "total": 0}
+
+@app.post("/api/alerts")
+async def create_alert():
+    """Stub: Create alert"""
+    return {"message": "Alerts feature coming soon", "id": None}
+
+@app.get("/api/portfolio")
+async def get_portfolio():
+    """Stub: Get portfolio"""
+    return {"holdings": [], "total_value": 0, "daily_change": 0}
+
+@app.get("/api/stocks/{symbol}")
+async def get_stock(symbol: str):
+    """Stub: Get stock data"""
+    return {
+        "symbol": symbol,
+        "price": 0,
+        "change": 0,
+        "message": "Stock data feature coming soon"
+    }
+
+@app.get("/api/signals")
+async def get_signals():
+    """Stub: Get trading signals"""
+    return {"signals": [], "message": "Signals feature coming soon"}
+
+@app.get("/api/screener")
+async def get_screener():
+    """Stub: Stock screener"""
+    return {"results": [], "message": "Screener feature coming soon"}
+
+@app.get("/api/news")
+async def get_news():
+    """Stub: Market news"""
+    return {"news": [], "message": "News feature coming soon"}
+
+@app.get("/api/ipo")
+async def get_ipo():
+    """Stub: IPO calendar"""
+    return {"upcoming": [], "recent": [], "message": "IPO feature coming soon"}
+
 # Error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
