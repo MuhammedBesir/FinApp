@@ -670,7 +670,6 @@ async def get_stock_info(symbol: str):
         "changePercent": data["changePercent"],
         "isMockData": data.get("isMockData", False)
     }
-    }
 
 @app.get("/api/stocks/{symbol}/indicators")
 async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = "1mo"):
