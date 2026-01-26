@@ -1388,10 +1388,10 @@ daily_picks_cache = {"data": None, "timestamp": None}
 def analyze_dataframe_for_picks(symbol: str, df) -> dict:
     """
     DataFrame'den tek hisse analizi - Hybrid Strategy v4
-    Backtest sonuçlarına göre optimize edilmiş parametreler
+    Backend backtest_hybrid.py ile senkronize edildi
     """
     try:
-        if df.empty or len(df) < 20:
+        if df.empty or len(df) < 50:
             return None
         
         closes = df['Close'].tolist()
@@ -1414,6 +1414,7 @@ def analyze_dataframe_for_picks(symbol: str, df) -> dict:
         ema9 = ema(closes, 9)
         ema21 = ema(closes, 21)
         ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
+        ema200 = ema(closes, 200) if len(closes) >= 200 else ema50
         
         # RSI hesapla
         gains, losses = [], []
@@ -1428,68 +1429,109 @@ def analyze_dataframe_for_picks(symbol: str, df) -> dict:
         avg_loss = sum(losses) / 14 if losses else 0.0001
         rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
         
-        # Momentum hesapla
-        momentum_5d = ((closes[-1] - closes[-5]) / closes[-5] * 100) if len(closes) >= 5 else 0
+        # MACD hesapla
+        ema12 = ema(closes, 12)
+        ema26 = ema(closes, 26)
+        macd_line = ema12 - ema26
         
-        # ========== HYBRID STRATEGY V4 SKORLAMA ==========
-        atr = curr * 0.025
+        # Signal line için son 9 MACD değeri lazım - basitleştirilmiş
+        macd_signal = macd_line * 0.9  # Yaklaşık signal
+        macd_hist = macd_line - macd_signal
+        
+        # ATR hesapla
+        atr_val = curr * 0.025  # Basit yaklaşım
+        if len(closes) >= 14 and len(highs) >= 14 and len(lows) >= 14:
+            trs = []
+            for i in range(-14, 0):
+                tr = max(
+                    highs[i] - lows[i],
+                    abs(highs[i] - closes[i-1]),
+                    abs(lows[i] - closes[i-1])
+                )
+                trs.append(tr)
+            atr_val = sum(trs) / len(trs)
+        
+        # ========== HYBRID STRATEGY V4 SKORLAMA (Backend ile senkron) ==========
         score = 0
         reasons = []
         
-        # 1. EMA Trend (25 puan)
+        # 1. Trend (30 puan toplam)
         if curr > ema9 > ema21:
-            score += 25
-            reasons.append("EMA trend pozitif (9>21)")
-        elif curr > ema21:
             score += 15
-            reasons.append("Fiyat EMA21 üstünde")
-        
-        # 2. Uzun vadeli trend (15 puan)
+            reasons.append("Kısa trend güçlü (9>21)")
         if ema21 > ema50:
-            score += 15
-            reasons.append("Uzun vadeli trend pozitif")
+            score += 10
+            reasons.append("Orta trend yukarı (21>50)")
+        if curr > ema200:
+            score += 5
+            reasons.append("Uzun trend yukarı (>200)")
         
-        # 3. RSI (20-25 puan)
-        if 30 <= rsi <= 70:
+        # 2. RSI (20 puan)
+        if 40 <= rsi <= 65:
             score += 20
-            reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
-        elif rsi < 30:
-            score += 25
-            reasons.append(f"RSI aşırı satım ({rsi:.0f})")
+            reasons.append(f"RSI optimal ({rsi:.0f})")
+        elif 30 <= rsi <= 70:
+            score += 10
+            reasons.append(f"RSI kabul edilebilir ({rsi:.0f})")
+        
+        # 3. MACD (20 puan)
+        if macd_line > macd_signal and macd_hist > 0:
+            score += 20
+            reasons.append("MACD pozitif")
+        elif macd_line > macd_signal:
+            score += 10
+            reasons.append("MACD yukarı kesişim")
         
         # 4. Hacim (15 puan)
         vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else (volumes[-1] if volumes else 1)
-        if volumes and volumes[-1] > vol_avg * 0.8:
+        vol_current = volumes[-1] if volumes else 0
+        if vol_current > vol_avg * 1.2:
             score += 15
-            reasons.append("Hacim normal üstü")
+            reasons.append("Hacim yüksek (+%20)")
+        elif vol_current > vol_avg:
+            score += 7
+            reasons.append("Hacim normal")
         
-        # 5. Momentum (10 puan)
-        if momentum_5d > 0:
-            score += 10
-            reasons.append(f"5 günlük momentum +{momentum_5d:.1f}%")
-        
-        # 6. Pozisyon analizi (bonus 10 puan)
+        # 5. Pozisyon (15 puan)
         if len(lows) >= 10 and len(highs) >= 10:
             swing_low = min(lows[-10:])
             swing_high = max(highs[-10:])
-            pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
-            if 0.15 <= pos <= 0.55:
-                score += 10
-                reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
+            position = (curr - swing_low) / (swing_high - swing_low + 0.0001)
+            if 0.3 <= position <= 0.6:
+                score += 15
+                reasons.append(f"Pozisyon ideal ({position*100:.0f}%)")
+            elif 0.2 <= position <= 0.7:
+                score += 8
+                reasons.append(f"Pozisyon iyi ({position*100:.0f}%)")
+        else:
+            swing_low = curr * 0.95
+            swing_high = curr * 1.05
         
-        # Minimum skor: 35 (daha düşük eşik = daha fazla fırsat)
-        if score < 35:
+        # Minimum skor: 70 (Backend ile aynı)
+        if score < 70:
             return None
         
-        # Stop Loss ve Take Profit hesapla
-        stop = curr - (atr * 2.0)
+        # ========== STOP LOSS HESABI (Backend ile senkron) ==========
+        # Stop Loss: max(ATR, EMA, Swing) - en güvenli olanı seç
+        atr_stop = curr - (atr_val * 2.0)
+        ema_stop = ema21 * 0.98  # EMA21'in %2 altı
+        swing_stop = swing_low * 0.985  # Swing low'un %1.5 altı
+        
+        stop = max(atr_stop, ema_stop, swing_stop)
         risk = curr - stop
         
+        # Min %1.5 risk kontrolü
         if risk / curr < 0.015:
             return None
         
-        tp1 = curr + (risk * 2.5)  # Risk/Reward = 2.5
-        tp2 = curr + (risk * 4.0)  # Risk/Reward = 4.0
+        # Take Profit hesapla
+        tp1 = curr + (risk * 2.5)  # R/R = 2.5
+        tp2 = curr + (risk * 4.0)  # R/R = 4.0
+        
+        # Min R/R kontrolü
+        rr = (tp1 - curr) / risk
+        if rr < 2.0:
+            return None
         
         return {
             "ticker": symbol.replace(".IS", ""),
@@ -1497,7 +1539,7 @@ def analyze_dataframe_for_picks(symbol: str, df) -> dict:
             "stop_loss": round(stop, 2),
             "take_profit_1": round(tp1, 2),
             "take_profit_2": round(tp2, 2),
-            "risk_reward_ratio": 2.5,
+            "risk_reward_ratio": round(rr, 2),
             "risk_reward_2": 4.0,
             "risk_pct": round((risk / curr) * 100, 2),
             "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
