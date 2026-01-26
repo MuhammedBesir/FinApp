@@ -419,20 +419,211 @@ async def get_portfolio():
     """Stub: Get portfolio"""
     return {"holdings": [], "total_value": 0, "daily_change": 0}
 
+# ========== Stock Data Endpoints (Yahoo Finance via requests) ==========
+import httpx
+
+async def fetch_yahoo_quote(symbol: str) -> dict:
+    """Fetch stock quote from Yahoo Finance API"""
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+        params = {"interval": "1d", "range": "5d"}
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url, params=params)
+            
+            if response.status_code != 200:
+                return None
+            
+            data = response.json()
+            result = data.get("chart", {}).get("result", [])
+            
+            if not result:
+                return None
+            
+            meta = result[0].get("meta", {})
+            quote = result[0].get("indicators", {}).get("quote", [{}])[0]
+            timestamps = result[0].get("timestamp", [])
+            
+            # Get latest values
+            closes = quote.get("close", [])
+            opens = quote.get("open", [])
+            highs = quote.get("high", [])
+            lows = quote.get("low", [])
+            volumes = quote.get("volume", [])
+            
+            if not closes:
+                return None
+            
+            # Filter None values and get last valid
+            valid_closes = [c for c in closes if c is not None]
+            valid_opens = [o for o in opens if o is not None]
+            valid_highs = [h for h in highs if h is not None]
+            valid_lows = [l for l in lows if l is not None]
+            valid_volumes = [v for v in volumes if v is not None]
+            
+            current_price = valid_closes[-1] if valid_closes else 0
+            prev_close = meta.get("previousClose", current_price)
+            change = current_price - prev_close if prev_close else 0
+            change_percent = (change / prev_close * 100) if prev_close else 0
+            
+            return {
+                "symbol": symbol,
+                "name": meta.get("shortName", symbol),
+                "price": round(current_price, 2),
+                "open": round(valid_opens[-1], 2) if valid_opens else 0,
+                "high": round(valid_highs[-1], 2) if valid_highs else 0,
+                "low": round(valid_lows[-1], 2) if valid_lows else 0,
+                "volume": valid_volumes[-1] if valid_volumes else 0,
+                "previousClose": round(prev_close, 2),
+                "change": round(change, 2),
+                "changePercent": round(change_percent, 2),
+                "currency": meta.get("currency", "TRY"),
+                "exchange": meta.get("exchangeName", "IST"),
+                "timestamp": timestamps[-1] if timestamps else None,
+                "candles": [
+                    {
+                        "time": timestamps[i] if i < len(timestamps) else None,
+                        "open": valid_opens[i] if i < len(valid_opens) else None,
+                        "high": valid_highs[i] if i < len(valid_highs) else None,
+                        "low": valid_lows[i] if i < len(valid_lows) else None,
+                        "close": valid_closes[i] if i < len(valid_closes) else None,
+                        "volume": valid_volumes[i] if i < len(valid_volumes) else None,
+                    }
+                    for i in range(len(valid_closes))
+                ]
+            }
+    except Exception as e:
+        logger.error(f"Yahoo Finance error: {e}")
+        return None
+
 @app.get("/api/stocks/{symbol}")
 async def get_stock(symbol: str):
-    """Stub: Get stock data"""
+    """Get stock data from Yahoo Finance"""
+    # Add .IS suffix if not present (for BIST stocks)
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    return data
+
+@app.get("/api/stocks/{symbol}/info")
+async def get_stock_info(symbol: str):
+    """Get stock info"""
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    return {
+        "symbol": data["symbol"],
+        "name": data["name"],
+        "currency": data["currency"],
+        "exchange": data["exchange"],
+        "price": data["price"],
+        "change": data["change"],
+        "changePercent": data["changePercent"]
+    }
+
+@app.get("/api/stocks/{symbol}/indicators")
+async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = "1mo"):
+    """Get basic indicators (simplified without pandas/numpy)"""
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    candles = data.get("candles", [])
+    closes = [c["close"] for c in candles if c.get("close")]
+    
+    # Simple RSI calculation (14 period)
+    rsi = 50  # Default neutral
+    if len(closes) >= 15:
+        gains = []
+        losses = []
+        for i in range(1, min(15, len(closes))):
+            diff = closes[i] - closes[i-1]
+            if diff > 0:
+                gains.append(diff)
+                losses.append(0)
+            else:
+                gains.append(0)
+                losses.append(abs(diff))
+        
+        avg_gain = sum(gains) / 14 if gains else 0
+        avg_loss = sum(losses) / 14 if losses else 0.0001
+        rs = avg_gain / avg_loss if avg_loss else 100
+        rsi = 100 - (100 / (1 + rs))
+    
+    # Simple moving averages
+    sma_20 = sum(closes[-20:]) / min(20, len(closes)) if closes else 0
+    sma_50 = sum(closes[-50:]) / min(50, len(closes)) if closes else 0
+    
     return {
         "symbol": symbol,
-        "price": 0,
-        "change": 0,
-        "message": "Stock data feature coming soon"
+        "rsi": round(rsi, 2),
+        "sma_20": round(sma_20, 2),
+        "sma_50": round(sma_50, 2),
+        "price": data["price"],
+        "trend": "bullish" if data["price"] > sma_20 else "bearish",
+        "rsi_signal": "oversold" if rsi < 30 else ("overbought" if rsi > 70 else "neutral")
+    }
+
+@app.get("/api/signals/{symbol}")
+async def get_stock_signals(symbol: str, strategy: str = "hybrid"):
+    """Get trading signals for a stock"""
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    # Simple signal based on price action
+    change_pct = data.get("changePercent", 0)
+    
+    if change_pct > 2:
+        signal = "STRONG_BUY"
+        action = "AL"
+    elif change_pct > 0.5:
+        signal = "BUY"
+        action = "AL"
+    elif change_pct < -2:
+        signal = "STRONG_SELL"
+        action = "SAT"
+    elif change_pct < -0.5:
+        signal = "SELL"
+        action = "SAT"
+    else:
+        signal = "HOLD"
+        action = "BEKLE"
+    
+    return {
+        "symbol": symbol,
+        "signal": signal,
+        "action": action,
+        "price": data["price"],
+        "change": data["change"],
+        "changePercent": data["changePercent"],
+        "confidence": min(abs(change_pct) * 10, 100),
+        "strategy": strategy,
+        "timestamp": datetime.now().isoformat()
     }
 
 @app.get("/api/signals")
 async def get_signals():
     """Stub: Get trading signals"""
-    return {"signals": [], "message": "Signals feature coming soon"}
+    return {"signals": [], "message": "Use /api/signals/{symbol} for specific stock signals"}
 
 @app.get("/api/screener")
 async def get_screener():
