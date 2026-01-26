@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -15,6 +15,80 @@ from pydantic import BaseModel
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ========== Database Setup (Neon PostgreSQL) ==========
+DB_AVAILABLE = False
+engine = None
+SessionLocal = None
+
+try:
+    from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, text
+    from sqlalchemy.ext.declarative import declarative_base
+    from sqlalchemy.orm import sessionmaker, Session
+    from sqlalchemy.pool import QueuePool
+    
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    
+    if DATABASE_URL:
+        # Fix URL format for SQLAlchemy
+        if DATABASE_URL.startswith("postgres://"):
+            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
+        elif DATABASE_URL.startswith("postgresql://") and "+pg8000" not in DATABASE_URL:
+            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+        
+        engine = create_engine(
+            DATABASE_URL,
+            poolclass=QueuePool,
+            pool_size=3,
+            max_overflow=5,
+            pool_timeout=30,
+            pool_recycle=300,
+            pool_pre_ping=True
+        )
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        DB_AVAILABLE = True
+        logger.info("PostgreSQL database connected successfully")
+    else:
+        logger.warning("DATABASE_URL not set, using in-memory storage")
+except ImportError as e:
+    logger.warning(f"Database libraries not available: {e}")
+except Exception as e:
+    logger.error(f"Database connection failed: {e}")
+
+# SQLAlchemy Base
+Base = None
+if DB_AVAILABLE:
+    from sqlalchemy.ext.declarative import declarative_base
+    Base = declarative_base()
+    
+    # User Model for Database
+    class UserDB(Base):
+        __tablename__ = "users"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        email = Column(String(255), unique=True, index=True, nullable=False)
+        hashed_password = Column(String(255), nullable=False)
+        full_name = Column(String(255), nullable=False)
+        is_active = Column(Boolean, default=True)
+        created_at = Column(DateTime, default=datetime.utcnow)
+        last_login = Column(DateTime, nullable=True)
+    
+    # Create tables
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.error(f"Failed to create tables: {e}")
+
+def get_db():
+    """Get database session"""
+    if not DB_AVAILABLE or SessionLocal is None:
+        return None
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # Claude API
 try:
@@ -333,8 +407,24 @@ async def root():
 
 @app.get("/api/health")
 async def health():
+    db_status = "connected" if DB_AVAILABLE else "not_connected"
+    db_type = "postgresql" if DB_AVAILABLE else "in_memory"
+    
+    # Test database connection
+    if DB_AVAILABLE and engine:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            db_status = "connected"
+        except Exception as e:
+            db_status = f"error: {str(e)[:50]}"
+    
     return {
         "status": "healthy",
+        "database": {
+            "status": db_status,
+            "type": db_type
+        },
         "claude_available": CLAUDE_AVAILABLE and bool(os.getenv("ANTHROPIC_API_KEY")),
         "timestamp": datetime.now().isoformat()
     }
@@ -391,16 +481,128 @@ async def get_knowledge(topic: str):
     
     raise HTTPException(status_code=404, detail="Topic not found")
 
-# ========== Auth Endpoints (Stub - LocalStorage Based) ==========
-# Simple auth that stores data in memory (resets on cold start)
-# For production, use a real database
-
+# ========== Auth Endpoints (PostgreSQL with fallback to in-memory) ==========
 import hashlib
 import secrets
 
-# In-memory user storage (for demo purposes)
-users_db: Dict[str, dict] = {}
+def hash_password(password: str) -> str:
+    """Hash password using SHA256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def generate_token() -> str:
+    """Generate secure random token"""
+    return secrets.token_urlsafe(32)
+
+# In-memory fallback storage (used when DB is not available)
+users_db_memory: Dict[str, dict] = {}
 tokens_db: Dict[str, str] = {}  # token -> email mapping
+
+# ========== Database Helper Functions ==========
+def get_user_from_db(email: str):
+    """Get user from database"""
+    if not DB_AVAILABLE or SessionLocal is None:
+        return users_db_memory.get(email)
+    
+    try:
+        db = SessionLocal()
+        user = db.query(UserDB).filter(UserDB.email == email).first()
+        db.close()
+        if user:
+            return {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "password_hash": user.hashed_password,
+                "is_active": user.is_active,
+                "created_at": user.created_at.isoformat() if user.created_at else None
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Database error getting user: {e}")
+        return users_db_memory.get(email)
+
+def create_user_in_db(email: str, full_name: str, password_hash: str):
+    """Create user in database"""
+    if not DB_AVAILABLE or SessionLocal is None:
+        user_id = f"mem_{len(users_db_memory) + 1}"
+        users_db_memory[email] = {
+            "id": user_id,
+            "email": email,
+            "full_name": full_name,
+            "password_hash": password_hash,
+            "created_at": datetime.now().isoformat()
+        }
+        return users_db_memory[email]
+    
+    try:
+        db = SessionLocal()
+        new_user = UserDB(
+            email=email,
+            full_name=full_name,
+            hashed_password=password_hash,
+            is_active=True,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        result = {
+            "id": new_user.id,
+            "email": new_user.email,
+            "full_name": new_user.full_name,
+            "password_hash": new_user.hashed_password,
+            "created_at": new_user.created_at.isoformat() if new_user.created_at else None
+        }
+        db.close()
+        return result
+    except Exception as e:
+        logger.error(f"Database error creating user: {e}")
+        # Fallback to memory
+        user_id = f"mem_{len(users_db_memory) + 1}"
+        users_db_memory[email] = {
+            "id": user_id,
+            "email": email,
+            "full_name": full_name,
+            "password_hash": password_hash,
+            "created_at": datetime.now().isoformat()
+        }
+        return users_db_memory[email]
+
+def update_user_in_db(email: str, **kwargs):
+    """Update user in database"""
+    if not DB_AVAILABLE or SessionLocal is None:
+        if email in users_db_memory:
+            users_db_memory[email].update(kwargs)
+            return users_db_memory[email]
+        return None
+    
+    try:
+        db = SessionLocal()
+        user = db.query(UserDB).filter(UserDB.email == email).first()
+        if user:
+            for key, value in kwargs.items():
+                if key == "password_hash":
+                    setattr(user, "hashed_password", value)
+                elif hasattr(user, key):
+                    setattr(user, key, value)
+            db.commit()
+            db.refresh(user)
+            result = {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "password_hash": user.hashed_password
+            }
+            db.close()
+            return result
+        db.close()
+        return None
+    except Exception as e:
+        logger.error(f"Database error updating user: {e}")
+        if email in users_db_memory:
+            users_db_memory[email].update(kwargs)
+            return users_db_memory[email]
+        return None
 
 class RegisterRequest(BaseModel):
     full_name: str
@@ -416,36 +618,28 @@ class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def generate_token() -> str:
-    return secrets.token_urlsafe(32)
-
 @app.post("/api/auth/register")
 async def register(request: RegisterRequest):
     """Register new user"""
     email = request.email.lower().strip()
     
-    if email in users_db:
+    # Check if user exists
+    existing_user = get_user_from_db(email)
+    if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
     if len(request.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
     
-    # Create user
-    user_id = f"user_{len(users_db) + 1}"
-    users_db[email] = {
-        "id": user_id,
-        "email": email,
-        "full_name": request.full_name,
-        "password_hash": hash_password(request.password),
-        "created_at": datetime.now().isoformat()
-    }
+    # Create user in database
+    password_hash = hash_password(request.password)
+    user = create_user_in_db(email, request.full_name, password_hash)
     
     # Generate token
     token = generate_token()
     tokens_db[token] = email
+    
+    logger.info(f"User registered: {email} (DB: {DB_AVAILABLE})")
     
     return {
         "success": True,
@@ -454,7 +648,7 @@ async def register(request: RegisterRequest):
             "access_token": token,
             "refresh_token": generate_token(),
             "user": {
-                "id": user_id,
+                "id": user["id"],
                 "email": email,
                 "full_name": request.full_name
             }
@@ -466,16 +660,22 @@ async def login(request: LoginRequest):
     """Login user"""
     email = request.email.lower().strip()
     
-    if email not in users_db:
+    # Get user from database
+    user = get_user_from_db(email)
+    if not user:
+        logger.warning(f"Login failed - user not found: {email}")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    user = users_db[email]
+    # Verify password
     if user["password_hash"] != hash_password(request.password):
+        logger.warning(f"Login failed - wrong password: {email}")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Generate new token
     token = generate_token()
     tokens_db[token] = email
+    
+    logger.info(f"User logged in: {email}")
     
     return {
         "success": True,
@@ -512,10 +712,13 @@ async def verify_token(request: Request):
     token = auth_header[7:]
     email = tokens_db.get(token)
     
-    if not email or email not in users_db:
+    if not email:
         return {"success": False, "message": "Invalid token"}
     
-    user = users_db[email]
+    user = get_user_from_db(email)
+    if not user:
+        return {"success": False, "message": "User not found"}
+    
     return {
         "success": True,
         "user": {
@@ -548,10 +751,13 @@ async def get_me(request: Request):
     token = auth_header[7:]
     email = tokens_db.get(token)
     
-    if not email or email not in users_db:
+    if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    user = users_db[email]
+    user = get_user_from_db(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
     return {
         "success": True,
         "user": {
@@ -572,14 +778,17 @@ async def update_me(request: Request):
     token = auth_header[7:]
     email = tokens_db.get(token)
     
-    if not email or email not in users_db:
+    if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
     
+    user = get_user_from_db(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
     body = await request.json()
-    user = users_db[email]
     
     if "full_name" in body:
-        user["full_name"] = body["full_name"]
+        user = update_user_in_db(email, full_name=body["full_name"])
     
     return {
         "success": True,
@@ -601,11 +810,14 @@ async def change_password(request: Request):
     token = auth_header[7:]
     email = tokens_db.get(token)
     
-    if not email or email not in users_db:
+    if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
     
+    user = get_user_from_db(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
     body = await request.json()
-    user = users_db[email]
     
     if user["password_hash"] != hash_password(body.get("current_password", "")):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
@@ -613,7 +825,9 @@ async def change_password(request: Request):
     if len(body.get("new_password", "")) < 6:
         raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
     
-    user["password_hash"] = hash_password(body["new_password"])
+    # Update password in database
+    new_password_hash = hash_password(body["new_password"])
+    update_user_in_db(email, password_hash=new_password_hash)
     
     return {"success": True, "message": "Password changed successfully"}
 
