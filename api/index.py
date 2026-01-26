@@ -71,6 +71,15 @@ if DB_AVAILABLE:
         created_at = Column(DateTime, default=datetime.utcnow)
         last_login = Column(DateTime, nullable=True)
     
+    # Daily Picks Cache Model
+    class DailyPicksCache(Base):
+        __tablename__ = "daily_picks_cache"
+        
+        id = Column(Integer, primary_key=True, index=True)
+        cache_key = Column(String(50), unique=True, index=True, default="daily_picks")
+        picks_json = Column(String(10000), nullable=True)  # JSON string
+        updated_at = Column(DateTime, default=datetime.utcnow)
+    
     # Create tables
     try:
         Base.metadata.create_all(bind=engine)
@@ -1487,64 +1496,71 @@ def analyze_dataframe_for_picks(symbol: str, df) -> dict:
 async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
     """
     Günlük hisse önerileri - Hybrid Strategy v4
-    yf.download ile tek istekte tüm verileri çekiyoruz (çok hızlı)
+    Önce DB cache'e bak, yoksa Yahoo Finance'tan çek
     """
+    import json
     global daily_picks_cache
     
-    # Cache kontrolü (5 dakika)
+    # 1. Önce in-memory cache'e bak (5 dakika)
     if daily_picks_cache["data"] and daily_picks_cache["timestamp"]:
         cache_age = (datetime.now() - daily_picks_cache["timestamp"]).total_seconds()
         if cache_age < 300:
-            logger.info("Returning cached daily picks")
+            logger.info("Returning in-memory cached daily picks")
             return daily_picks_cache["data"]
     
-    SYMBOLS = ['THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'EREGL.IS', 'ASELS.IS', 
-               'KCHOL.IS', 'SISE.IS', 'TCELL.IS', 'TUPRS.IS', 'FROTO.IS']
+    # 2. DB cache'e bak (eğer DB varsa)
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            cache_record = db.execute(
+                text("SELECT picks_json, updated_at FROM daily_picks_cache WHERE cache_key = 'daily_picks' LIMIT 1")
+            ).fetchone()
+            
+            if cache_record and cache_record[0]:
+                cache_age = (datetime.now() - cache_record[1]).total_seconds() if cache_record[1] else 9999
+                # 30 dakikadan yeniyse DB cache'i kullan
+                if cache_age < 1800:
+                    result = json.loads(cache_record[0])
+                    result["timestamp"] = datetime.now().isoformat()
+                    result["cache_source"] = "database"
+                    # In-memory cache'e de kaydet
+                    daily_picks_cache["data"] = result
+                    daily_picks_cache["timestamp"] = datetime.now()
+                    db.close()
+                    logger.info("Returning DB cached daily picks")
+                    return result
+            db.close()
+        except Exception as e:
+            logger.error(f"DB cache read error: {e}")
     
+    # 3. Yahoo Finance'tan çek (son çare)
+    SYMBOLS = ['THYAO.IS', 'GARAN.IS', 'ASELS.IS', 'EREGL.IS', 'FROTO.IS']
     picks = []
     
     try:
-        # TEK İSTEKTE TÜM HİSSELERİ ÇEK - Bu çok hızlı!
         data = yf.download(
             tickers=SYMBOLS,
-            period="3mo",
+            period="2mo",
             group_by='ticker',
             threads=True,
             progress=False,
-            timeout=8
+            timeout=6
         )
         
         for symbol in SYMBOLS:
             try:
-                # Multi-ticker download'da her ticker'ın verisi ayrı
-                if len(SYMBOLS) > 1:
-                    ticker_data = data[symbol] if symbol in data.columns.get_level_values(0) else None
-                else:
-                    ticker_data = data
-                
+                ticker_data = data[symbol] if symbol in data.columns.get_level_values(0) else None
                 if ticker_data is None or ticker_data.empty:
                     continue
-                
                 result = analyze_dataframe_for_picks(symbol, ticker_data)
                 if result:
                     picks.append(result)
-                    
             except Exception as e:
                 logger.error(f"Error processing {symbol}: {e}")
                 continue
                 
     except Exception as e:
         logger.error(f"Download error: {e}")
-        # Fallback: Tek tek dene (daha yavaş ama güvenilir)
-        for symbol in SYMBOLS[:5]:
-            try:
-                ticker = yf.Ticker(symbol)
-                hist = ticker.history(period="2mo", timeout=2)
-                result = analyze_dataframe_for_picks(symbol, hist)
-                if result:
-                    picks.append(result)
-            except:
-                continue
     
     # Score'a göre sırala
     picks.sort(key=lambda x: x["strength"], reverse=True)
@@ -1563,14 +1579,117 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
         },
         "market_trend": "YUKSELIS" if len(top_picks) >= 3 else "YATAY",
         "warnings": [],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "cache_source": "live"
     }
     
-    # Cache'e kaydet
-    daily_picks_cache["data"] = result
-    daily_picks_cache["timestamp"] = datetime.now()
+    # 4. Başarılıysa DB ve memory cache'e kaydet
+    if top_picks:
+        daily_picks_cache["data"] = result
+        daily_picks_cache["timestamp"] = datetime.now()
+        
+        if DB_AVAILABLE and SessionLocal:
+            try:
+                db = SessionLocal()
+                # Upsert (insert or update)
+                db.execute(text("""
+                    INSERT INTO daily_picks_cache (cache_key, picks_json, updated_at)
+                    VALUES ('daily_picks', :json_data, :now)
+                    ON CONFLICT (cache_key) DO UPDATE SET
+                        picks_json = :json_data,
+                        updated_at = :now
+                """), {"json_data": json.dumps(result), "now": datetime.now()})
+                db.commit()
+                db.close()
+                logger.info("Saved daily picks to DB cache")
+            except Exception as e:
+                logger.error(f"DB cache write error: {e}")
     
     return result
+
+@app.post("/api/signals/daily-picks/refresh")
+async def refresh_daily_picks():
+    """
+    Günlük önerileri elle güncelle (admin endpoint)
+    Cache'i temizler ve yeni veri çeker
+    """
+    import json
+    global daily_picks_cache
+    
+    # Cache'i temizle
+    daily_picks_cache = {"data": None, "timestamp": None}
+    
+    # DB cache'i temizle
+    if DB_AVAILABLE and SessionLocal:
+        try:
+            db = SessionLocal()
+            db.execute(text("DELETE FROM daily_picks_cache WHERE cache_key = 'daily_picks'"))
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"DB cache clear error: {e}")
+    
+    # Yeni veri çek
+    SYMBOLS = ['THYAO.IS', 'GARAN.IS', 'ASELS.IS', 'EREGL.IS', 'FROTO.IS']
+    picks = []
+    
+    try:
+        data = yf.download(
+            tickers=SYMBOLS,
+            period="2mo",
+            group_by='ticker',
+            threads=True,
+            progress=False,
+            timeout=8
+        )
+        
+        for symbol in SYMBOLS:
+            try:
+                ticker_data = data[symbol] if symbol in data.columns.get_level_values(0) else None
+                if ticker_data is None or ticker_data.empty:
+                    continue
+                result = analyze_dataframe_for_picks(symbol, ticker_data)
+                if result:
+                    picks.append(result)
+            except:
+                continue
+    except Exception as e:
+        return {"status": "error", "message": f"Refresh failed: {str(e)}"}
+    
+    picks.sort(key=lambda x: x["strength"], reverse=True)
+    top_picks = picks[:5]
+    
+    result = {
+        "status": "success",
+        "picks": top_picks,
+        "total_scanned": len(SYMBOLS),
+        "found": len(picks),
+        "strategy_info": {"name": "Hybrid Strategy v4", "win_rate": "57.1%"},
+        "market_trend": "YUKSELIS" if len(top_picks) >= 3 else "YATAY",
+        "warnings": [],
+        "timestamp": datetime.now().isoformat(),
+        "cache_source": "refreshed"
+    }
+    
+    # Cache'lere kaydet
+    if top_picks:
+        daily_picks_cache["data"] = result
+        daily_picks_cache["timestamp"] = datetime.now()
+        
+        if DB_AVAILABLE and SessionLocal:
+            try:
+                db = SessionLocal()
+                db.execute(text("""
+                    INSERT INTO daily_picks_cache (cache_key, picks_json, updated_at)
+                    VALUES ('daily_picks', :json_data, :now)
+                    ON CONFLICT (cache_key) DO UPDATE SET picks_json = :json_data, updated_at = :now
+                """), {"json_data": json.dumps(result), "now": datetime.now()})
+                db.commit()
+                db.close()
+            except Exception as e:
+                logger.error(f"DB cache write error: {e}")
+    
+    return {"status": "refreshed", "picks_count": len(top_picks), "result": result}
 
 @app.get("/api/signals/saved-picks")
 async def get_saved_picks():
