@@ -1174,6 +1174,87 @@ async def get_ipo():
     """Stub: IPO calendar"""
     return {"upcoming": [], "recent": [], "message": "IPO feature coming soon"}
 
+@app.get("/api/market/all")
+async def get_market_all():
+    """Get all market data for BIST30"""
+    BIST30 = [
+        'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
+        'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS',
+        'FROTO.IS', 'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'ODAS.IS'
+    ]
+    
+    stocks = []
+    for symbol in BIST30[:15]:  # İlk 15 hisse (hız için)
+        try:
+            data = await fetch_yahoo_quote(symbol)
+            if data:
+                stocks.append({
+                    "symbol": symbol,
+                    "name": data.get("name", symbol),
+                    "price": data.get("price", 0),
+                    "change": data.get("change", 0),
+                    "changePercent": data.get("changePercent", 0),
+                    "volume": data.get("volume", 0)
+                })
+        except:
+            continue
+    
+    return {
+        "stocks": stocks,
+        "count": len(stocks),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/screener/top-movers")
+async def get_top_movers(top_n: int = 5):
+    """Get top gaining and losing stocks"""
+    BIST30 = [
+        'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
+        'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS'
+    ]
+    
+    stocks = []
+    for symbol in BIST30:
+        try:
+            data = await fetch_yahoo_quote(symbol)
+            if data and not data.get("isMockData"):
+                stocks.append({
+                    "symbol": symbol,
+                    "name": data.get("name", symbol),
+                    "price": data.get("price", 0),
+                    "change": data.get("change", 0),
+                    "changePercent": data.get("changePercent", 0),
+                    "volume": data.get("volume", 0)
+                })
+        except:
+            continue
+    
+    # Sort by change percent
+    stocks.sort(key=lambda x: x["changePercent"], reverse=True)
+    
+    gainers = stocks[:top_n]
+    losers = stocks[-top_n:][::-1]  # Reverse to show biggest losers first
+    
+    return {
+        "gainers": gainers,
+        "losers": losers,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/screener/day-trade-status")
+async def get_day_trade_status():
+    """Get day trading status and opportunities"""
+    return {
+        "status": "active",
+        "market_open": True,
+        "session": "regular",
+        "opportunities_count": 0,
+        "last_scan": datetime.now().isoformat(),
+        "message": "Piyasa açık. Fırsatlar için /api/screener endpoint'ini kullanın."
+    }
+
 # Error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
