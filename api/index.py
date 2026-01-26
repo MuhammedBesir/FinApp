@@ -419,26 +419,117 @@ async def get_portfolio():
     """Stub: Get portfolio"""
     return {"holdings": [], "total_value": 0, "daily_change": 0}
 
+# ========== MOCK DATA for BIST30 (Fallback when Yahoo fails) ==========
+MOCK_STOCK_DATA = {
+    "THYAO.IS": {"name": "Türk Hava Yolları", "price": 298.50, "change": 3.20, "changePercent": 1.08},
+    "GARAN.IS": {"name": "Garanti BBVA", "price": 151.00, "change": 1.50, "changePercent": 1.00},
+    "AKBNK.IS": {"name": "Akbank", "price": 52.80, "change": 0.45, "changePercent": 0.86},
+    "YKBNK.IS": {"name": "Yapı Kredi", "price": 37.90, "change": 0.38, "changePercent": 1.01},
+    "EREGL.IS": {"name": "Ereğli Demir Çelik", "price": 58.20, "change": -0.30, "changePercent": -0.51},
+    "BIMAS.IS": {"name": "BİM", "price": 620.00, "change": 5.50, "changePercent": 0.89},
+    "ASELS.IS": {"name": "Aselsan", "price": 320.00, "change": 8.75, "changePercent": 2.81},
+    "KCHOL.IS": {"name": "Koç Holding", "price": 188.50, "change": 1.20, "changePercent": 0.64},
+    "SAHOL.IS": {"name": "Sabancı Holding", "price": 78.50, "change": 0.65, "changePercent": 0.83},
+    "SISE.IS": {"name": "Şişecam", "price": 52.40, "change": -0.15, "changePercent": -0.29},
+    "TCELL.IS": {"name": "Turkcell", "price": 101.50, "change": 0.80, "changePercent": 0.79},
+    "TUPRS.IS": {"name": "Tüpraş", "price": 185.00, "change": 2.10, "changePercent": 1.15},
+    "PGSUS.IS": {"name": "Pegasus", "price": 980.00, "change": 12.00, "changePercent": 1.24},
+    "TAVHL.IS": {"name": "TAV Havalimanları", "price": 145.00, "change": 1.80, "changePercent": 1.26},
+    "ENKAI.IS": {"name": "Enka İnşaat", "price": 83.50, "change": 0.95, "changePercent": 1.15},
+    "FROTO.IS": {"name": "Ford Otosan", "price": 1250.00, "change": 15.00, "changePercent": 1.21},
+    "TOASO.IS": {"name": "Tofaş", "price": 268.00, "change": 3.50, "changePercent": 1.32},
+    "EKGYO.IS": {"name": "Emlak Konut GYO", "price": 22.50, "change": 0.35, "changePercent": 1.58},
+    "GUBRF.IS": {"name": "Gübre Fabrikaları", "price": 410.00, "change": 6.25, "changePercent": 1.55},
+    "HEKTS.IS": {"name": "Hektaş", "price": 95.00, "change": 1.10, "changePercent": 1.17},
+    "ISCTR.IS": {"name": "İş Bankası C", "price": 18.20, "change": 0.15, "changePercent": 0.83},
+    "ODAS.IS": {"name": "Odaş Elektrik", "price": 8.50, "change": 0.08, "changePercent": 0.95},
+    "AKSEN.IS": {"name": "Aksa Enerji", "price": 68.00, "change": 0.75, "changePercent": 1.12},
+    "ARCLK.IS": {"name": "Arçelik", "price": 180.00, "change": 2.00, "changePercent": 1.12},
+    "PETKM.IS": {"name": "Petkim", "price": 22.00, "change": 0.18, "changePercent": 0.82},
+    "TKFEN.IS": {"name": "Tekfen Holding", "price": 185.00, "change": 1.90, "changePercent": 1.04},
+    "SASA.IS": {"name": "Sasa Polyester", "price": 65.00, "change": 0.55, "changePercent": 0.85},
+    "KRDMD.IS": {"name": "Kardemir D", "price": 29.00, "change": 0.32, "changePercent": 1.12},
+    "VAKBN.IS": {"name": "Vakıfbank", "price": 25.50, "change": 0.28, "changePercent": 1.11},
+    "TRALT.IS": {"name": "Türk Alüminyum", "price": 42.00, "change": 0.45, "changePercent": 1.08},
+}
+
+def get_mock_data(symbol: str) -> dict:
+    """Generate mock stock data for demo purposes"""
+    import random
+    from datetime import datetime, timedelta
+    
+    base = MOCK_STOCK_DATA.get(symbol, {
+        "name": symbol.replace(".IS", ""),
+        "price": 100.0,
+        "change": 1.0,
+        "changePercent": 1.0
+    })
+    
+    # Add some randomness
+    price_var = base["price"] * random.uniform(-0.02, 0.02)
+    current_price = round(base["price"] + price_var, 2)
+    prev_close = round(current_price - base["change"], 2)
+    
+    # Generate mock candles
+    candles = []
+    now = datetime.now()
+    for i in range(30):
+        day = now - timedelta(days=30-i)
+        daily_var = base["price"] * random.uniform(-0.03, 0.03)
+        o = round(base["price"] + daily_var, 2)
+        h = round(o * random.uniform(1.0, 1.02), 2)
+        l = round(o * random.uniform(0.98, 1.0), 2)
+        c = round(random.uniform(l, h), 2)
+        v = int(random.uniform(1000000, 5000000))
+        candles.append({
+            "timestamp": day.strftime("%Y-%m-%dT09:30:00"),
+            "open": o, "high": h, "low": l, "close": c, "volume": v
+        })
+    
+    return {
+        "symbol": symbol,
+        "name": base["name"],
+        "price": current_price,
+        "open": candles[-1]["open"],
+        "high": candles[-1]["high"],
+        "low": candles[-1]["low"],
+        "volume": candles[-1]["volume"],
+        "previousClose": prev_close,
+        "change": base["change"],
+        "changePercent": base["changePercent"],
+        "currency": "TRY",
+        "exchange": "IST",
+        "timestamp": now.isoformat(),
+        "candles": candles,
+        "isMockData": True
+    }
+
 # ========== Stock Data Endpoints (Yahoo Finance via requests) ==========
 import httpx
 
 async def fetch_yahoo_quote(symbol: str) -> dict:
-    """Fetch stock quote from Yahoo Finance API"""
+    """Fetch stock quote from Yahoo Finance API with mock fallback"""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        params = {"interval": "1d", "range": "5d"}
+        params = {"interval": "1d", "range": "1mo"}
         
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url, params=params, headers=headers)
             
             if response.status_code != 200:
-                return None
+                logger.warning(f"Yahoo returned {response.status_code} for {symbol}, using mock data")
+                return get_mock_data(symbol)
             
             data = response.json()
             result = data.get("chart", {}).get("result", [])
             
             if not result:
-                return None
+                logger.warning(f"No chart result for {symbol}, using mock data")
+                return get_mock_data(symbol)
             
             meta = result[0].get("meta", {})
             quote = result[0].get("indicators", {}).get("quote", [{}])[0]
@@ -452,7 +543,8 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
             volumes = quote.get("volume", [])
             
             if not closes:
-                return None
+                logger.warning(f"No close data for {symbol}, using mock data")
+                return get_mock_data(symbol)
             
             # Filter None values and get last valid
             valid_closes = [c for c in closes if c is not None]
@@ -461,7 +553,11 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
             valid_lows = [l for l in lows if l is not None]
             valid_volumes = [v for v in volumes if v is not None]
             
-            current_price = valid_closes[-1] if valid_closes else 0
+            if not valid_closes:
+                logger.warning(f"No valid closes for {symbol}, using mock data")
+                return get_mock_data(symbol)
+            
+            current_price = valid_closes[-1]
             prev_close = meta.get("previousClose", current_price)
             change = current_price - prev_close if prev_close else 0
             change_percent = (change / prev_close * 100) if prev_close else 0
@@ -482,7 +578,7 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
                 "timestamp": timestamps[-1] if timestamps else None,
                 "candles": [
                     {
-                        "time": timestamps[i] if i < len(timestamps) else None,
+                        "timestamp": timestamps[i] if i < len(timestamps) else None,
                         "open": valid_opens[i] if i < len(valid_opens) else None,
                         "high": valid_highs[i] if i < len(valid_highs) else None,
                         "low": valid_lows[i] if i < len(valid_lows) else None,
@@ -490,25 +586,23 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
                         "volume": valid_volumes[i] if i < len(valid_volumes) else None,
                     }
                     for i in range(len(valid_closes))
-                ]
+                ],
+                "isMockData": False
             }
     except Exception as e:
-        logger.error(f"Yahoo Finance error: {e}")
-        return None
+        logger.error(f"Yahoo Finance error for {symbol}: {e}")
+        logger.info(f"Falling back to mock data for {symbol}")
+        return get_mock_data(symbol)
 
 @app.get("/api/stocks/{symbol}")
 async def get_stock(symbol: str):
-    """Get stock data from Yahoo Finance"""
+    """Get stock data from Yahoo Finance (with mock fallback)"""
     # Add .IS suffix if not present (for BIST stocks)
     if not symbol.endswith(".IS") and not "." in symbol:
         symbol = f"{symbol}.IS"
     
     data = await fetch_yahoo_quote(symbol)
-    
-    if not data:
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    
-    return data
+    return data  # Always returns data (real or mock)
 
 @app.get("/api/stocks/{symbol}/data")
 async def get_stock_data(symbol: str, interval: str = "1d", period: str = "1mo"):
@@ -518,16 +612,14 @@ async def get_stock_data(symbol: str, interval: str = "1d", period: str = "1mo")
     
     data = await fetch_yahoo_quote(symbol)
     
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No data available for {symbol}")
-    
     # Convert candles to frontend expected format
     candles = data.get("candles", [])
     result = []
     for c in candles:
-        if c.get("timestamp"):
+        ts = c.get("timestamp") or c.get("time")
+        if ts:
             result.append({
-                "timestamp": c["timestamp"],
+                "timestamp": ts,
                 "open": c.get("open"),
                 "high": c.get("high"),
                 "low": c.get("low"),
@@ -539,7 +631,8 @@ async def get_stock_data(symbol: str, interval: str = "1d", period: str = "1mo")
         "symbol": data["symbol"],
         "interval": interval,
         "period": period,
-        "data": result
+        "data": result,
+        "isMockData": data.get("isMockData", False)
     }
 
 @app.get("/api/stocks/{symbol}/current-price")
@@ -550,15 +643,13 @@ async def get_current_price(symbol: str):
     
     data = await fetch_yahoo_quote(symbol)
     
-    if not data:
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    
     return {
         "symbol": data["symbol"],
         "price": data["price"],
         "change": data["change"],
         "changePercent": data["changePercent"],
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "isMockData": data.get("isMockData", False)
     }
 
 @app.get("/api/stocks/{symbol}/info")
@@ -569,9 +660,6 @@ async def get_stock_info(symbol: str):
     
     data = await fetch_yahoo_quote(symbol)
     
-    if not data:
-        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
-    
     return {
         "symbol": data["symbol"],
         "name": data["name"],
@@ -579,7 +667,9 @@ async def get_stock_info(symbol: str):
         "exchange": data["exchange"],
         "price": data["price"],
         "change": data["change"],
-        "changePercent": data["changePercent"]
+        "changePercent": data["changePercent"],
+        "isMockData": data.get("isMockData", False)
+    }
     }
 
 @app.get("/api/stocks/{symbol}/indicators")
