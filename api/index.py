@@ -510,6 +510,57 @@ async def get_stock(symbol: str):
     
     return data
 
+@app.get("/api/stocks/{symbol}/data")
+async def get_stock_data(symbol: str, interval: str = "1d", period: str = "1mo"):
+    """Get stock OHLCV data - Frontend compatible endpoint"""
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"No data available for {symbol}")
+    
+    # Convert candles to frontend expected format
+    candles = data.get("candles", [])
+    result = []
+    for c in candles:
+        if c.get("timestamp"):
+            result.append({
+                "timestamp": c["timestamp"],
+                "open": c.get("open"),
+                "high": c.get("high"),
+                "low": c.get("low"),
+                "close": c.get("close"),
+                "volume": c.get("volume")
+            })
+    
+    return {
+        "symbol": data["symbol"],
+        "interval": interval,
+        "period": period,
+        "data": result
+    }
+
+@app.get("/api/stocks/{symbol}/current-price")
+async def get_current_price(symbol: str):
+    """Get current stock price"""
+    if not symbol.endswith(".IS") and not "." in symbol:
+        symbol = f"{symbol}.IS"
+    
+    data = await fetch_yahoo_quote(symbol)
+    
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Stock {symbol} not found")
+    
+    return {
+        "symbol": data["symbol"],
+        "price": data["price"],
+        "change": data["change"],
+        "changePercent": data["changePercent"],
+        "timestamp": datetime.now().isoformat()
+    }
+
 @app.get("/api/stocks/{symbol}/info")
 async def get_stock_info(symbol: str):
     """Get stock info"""
