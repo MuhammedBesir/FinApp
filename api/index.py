@@ -1165,6 +1165,7 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
             
             ema9 = ema(closes, 9)
             ema21 = ema(closes, 21)
+            ema50 = ema(closes, 50) if len(closes) >= 50 else ema21
             
             # RSI hesapla
             gains, losses = [], []
@@ -1188,44 +1189,59 @@ async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
                     trs.append(tr)
                 atr = sum(trs) / len(trs)
             
-            # Skor hesapla (Hybrid Strategy v4)
+            # Skor hesapla (Hybrid Strategy v4 - Backtest ile senkronize)
             score = 0
             reasons = []
             
+            # 1. EMA Trend (Backtest: curr > ema9 > ema21 = +20)
             if curr > ema9 > ema21:
-                score += 25
-                reasons.append("EMA trend pozitif")
+                score += 20
+                reasons.append("EMA trend pozitif (9>21)")
+            
+            # 2. Uzun Vadeli Trend (Backtest: ema21 > ema50 = +15)
+            if ema21 > ema50:
+                score += 15
+                reasons.append("Uzun vadeli trend pozitif (21>50)")
+            
+            # 3. RSI Nötr Bölge (Backtest: 35 <= rsi <= 65 = +20)
             if 35 <= rsi <= 65:
                 score += 20
                 reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
             
+            # 4. Hacim Kontrolü (Backtest: vol > vol_avg = +15)
             vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
             if volumes[-1] > vol_avg:
-                score += 20
+                score += 15
                 reasons.append("Hacim ortalamanın üstünde")
             
-            # Pozisyon analizi
+            # 5. Pozisyon analizi (Backtest: 0.15 <= pos <= 0.55 = +15)
             if len(lows) >= 10 and len(highs) >= 10:
                 swing_low = min(lows[-10:])
                 swing_high = max(highs[-10:])
                 pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
                 if 0.15 <= pos <= 0.55:
-                    score += 20
-                    reasons.append("Fiyat uygun pozisyonda")
+                    score += 15
+                    reasons.append(f"Fiyat uygun pozisyonda ({pos*100:.0f}%)")
             
-            # Momentum
+            # 6. Momentum (Ek filtre - opsiyonel bonus)
             if len(closes) >= 5:
                 momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
                 if 0 < momentum < 5:
-                    score += 15
+                    score += 10
                     reasons.append(f"Pozitif momentum (+{momentum:.1f}%)")
             
+            # Minimum skor kontrolü (Backtest: 60)
             if score < 60:
                 continue
             
-            # Stop ve TP hesapla
+            # Stop ve TP hesapla (Backtest ile aynı)
             stop = curr - (atr * 2.0)
             risk = curr - stop
+            
+            # Minimum risk kontrolü (Backtest'teki gibi)
+            if risk / curr < 0.015:
+                continue  # Risk çok düşük, geçerli sinyal değil
+            
             tp1 = curr + (risk * 2.5)
             tp2 = curr + (risk * 4.0)
             
