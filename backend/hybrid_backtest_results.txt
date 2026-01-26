@@ -1,23 +1,0 @@
-nohup: ignoring input
-
-======================================================================
-🚀 BACKTEST HYBRID - V2 + V3 EN İYİ ÖZELLİKLER
-======================================================================
-📅 Test Süresi: 90 gün
-🎯 Min Score: 70+ (V2 base, biraz esnek)
-📊 Max Picks: 5 (sektör çeşitlendirmeli)
-⛔ Stop-Loss: Teknik (~%2, V2 tarzı)
-🎯 Take-Profit: 1:2.5 & 1:4.0 R/R (V3 tarzı)
-📉 Partial Exit: TP1'de %50 (V3 feature)
-📈 Market Filtresi: BIST100 uptrend (V2)
-✨ Booster: Candlestick + S/R + Momentum (opsiyonel bonus)
-🎯 HEDEF: %68+ WR, 2.8+ PF, <8% Max DD
-======================================================================
-
-📥 Veri çekiliyor (15 hisse)...
-✅ 15 hisse yüklendi
-📥 BIST100 verisi çekiliyor...
-
-📅 İşlem günü: 0/35📅 İşlem günü: 10/35📅 İşlem günü: 20/35📅 İşlem günü: 30/35📅 İşlem günü: 35/35
-
-⚠️  Hiç işlem gerçekleşmedi!
