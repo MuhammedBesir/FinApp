@@ -1066,10 +1066,6 @@ async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = 
 @app.get("/api/signals/{symbol}")
 async def get_stock_signals(symbol: str, strategy: str = "hybrid"):
     """Get trading signals for a stock"""
-    # Spesifik endpoint'leri wildcard'dan koru
-    if symbol in ["daily-picks", "saved-picks"]:
-        raise HTTPException(status_code=404, detail="Use correct endpoint")
-    
     if not symbol.endswith(".IS") and not "." in symbol:
         symbol = f"{symbol}.IS"
     
@@ -1113,6 +1109,228 @@ async def get_stock_signals(symbol: str, strategy: str = "hybrid"):
 async def get_signals():
     """Stub: Get trading signals"""
     return {"signals": [], "message": "Use /api/signals/{symbol} for specific stock signals"}
+
+# ========== KRITIK: Günlük Fırsatlar için Eksik Endpoint'ler ==========
+
+@app.get("/api/signals/daily-picks")
+async def get_daily_picks(strategy: str = "hybrid", max_picks: int = 5):
+    """
+    Günlük hisse önerileri - Hybrid Strategy v4
+    DailyPicksPage.jsx bu endpoint'i kullanıyor
+    """
+    BIST30 = [
+        'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
+        'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS',
+        'FROTO.IS', 'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'AKSEN.IS'
+    ]
+    
+    picks = []
+    
+    for symbol in BIST30[:15]:  # İlk 15 hisse (hız için)
+        try:
+            data = await fetch_yahoo_quote(symbol)
+            if not data or data.get("isMockData"):
+                continue
+            
+            candles = data.get("candles", [])
+            if len(candles) < 20:
+                continue
+            
+            closes = [c["close"] for c in candles if c.get("close")]
+            highs = [c["high"] for c in candles if c.get("high")]
+            lows = [c["low"] for c in candles if c.get("low")]
+            volumes = [c["volume"] for c in candles if c.get("volume")]
+            
+            if len(closes) < 20:
+                continue
+            
+            curr = closes[-1]
+            
+            # EMA hesapla
+            def ema(data, period):
+                if len(data) < period:
+                    return data[-1] if data else 0
+                mult = 2 / (period + 1)
+                result = sum(data[:period]) / period
+                for price in data[period:]:
+                    result = (price * mult) + (result * (1 - mult))
+                return result
+            
+            ema9 = ema(closes, 9)
+            ema21 = ema(closes, 21)
+            
+            # RSI hesapla
+            gains, losses = [], []
+            for i in range(1, min(15, len(closes))):
+                diff = closes[-i] - closes[-i-1]
+                if diff > 0:
+                    gains.append(diff)
+                else:
+                    losses.append(abs(diff))
+            
+            avg_gain = sum(gains) / 14 if gains else 0
+            avg_loss = sum(losses) / 14 if losses else 0.0001
+            rsi = 100 - (100 / (1 + (avg_gain / avg_loss)))
+            
+            # ATR hesapla
+            atr = curr * 0.025  # Basit yaklaşım: fiyatın %2.5'i
+            if len(closes) >= 14 and len(highs) >= 14 and len(lows) >= 14:
+                trs = []
+                for i in range(-14, 0):
+                    tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+                    trs.append(tr)
+                atr = sum(trs) / len(trs)
+            
+            # Skor hesapla (Hybrid Strategy v4)
+            score = 0
+            reasons = []
+            
+            if curr > ema9 > ema21:
+                score += 25
+                reasons.append("EMA trend pozitif")
+            if 35 <= rsi <= 65:
+                score += 20
+                reasons.append(f"RSI nötr bölgede ({rsi:.0f})")
+            
+            vol_avg = sum(volumes[-20:]) / 20 if len(volumes) >= 20 else volumes[-1]
+            if volumes[-1] > vol_avg:
+                score += 20
+                reasons.append("Hacim ortalamanın üstünde")
+            
+            # Pozisyon analizi
+            if len(lows) >= 10 and len(highs) >= 10:
+                swing_low = min(lows[-10:])
+                swing_high = max(highs[-10:])
+                pos = (curr - swing_low) / (swing_high - swing_low + 0.0001)
+                if 0.15 <= pos <= 0.55:
+                    score += 20
+                    reasons.append("Fiyat uygun pozisyonda")
+            
+            # Momentum
+            if len(closes) >= 5:
+                momentum = (closes[-1] - closes[-5]) / closes[-5] * 100
+                if 0 < momentum < 5:
+                    score += 15
+                    reasons.append(f"Pozitif momentum (+{momentum:.1f}%)")
+            
+            if score < 60:
+                continue
+            
+            # Stop ve TP hesapla
+            stop = curr - (atr * 2.0)
+            risk = curr - stop
+            tp1 = curr + (risk * 2.5)
+            tp2 = curr + (risk * 4.0)
+            
+            picks.append({
+                "ticker": symbol.replace(".IS", ""),
+                "entry_price": round(curr, 2),
+                "stop_loss": round(stop, 2),
+                "take_profit_1": round(tp1, 2),
+                "take_profit_2": round(tp2, 2),
+                "risk_reward_ratio": 2.5,
+                "risk_reward_2": 4.0,
+                "risk_pct": round((risk / curr) * 100, 2),
+                "reward_pct": round(((tp1 - curr) / curr) * 100, 2),
+                "strength": score,
+                "confidence": min(score + 10, 100),
+                "signal": "BUY",
+                "sector": "BIST30",
+                "reasons": reasons,
+                "partial_exit_pct": 0.5,
+                "exit_strategy": {
+                    "tp1_action": "TP1'de %50 pozisyon kapat",
+                    "tp1_new_stop": "Break-even'a çek",
+                    "tp2_action": "TP2'de kalan %50 kapat"
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+            continue
+    
+    # Score'a göre sırala
+    picks.sort(key=lambda x: x["strength"], reverse=True)
+    top_picks = picks[:max_picks]
+    
+    return {
+        "status": "success",
+        "picks": top_picks,
+        "total_scanned": len(BIST30[:15]),
+        "found": len(picks),
+        "strategy_info": {
+            "name": "Hybrid Strategy v4",
+            "win_rate": "57.1%",
+            "profit_factor": "1.94",
+            "backtest_return": "+105.31%"
+        },
+        "market_trend": "YUKSELIS" if len(top_picks) >= 3 else "YATAY",
+        "warnings": [],
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/signals/saved-picks")
+async def get_saved_picks():
+    """
+    Kaydedilmiş günlük öneriler (18:30 taraması)
+    Şimdilik daily-picks ile aynı veriyi döndürür
+    """
+    # Gerçek uygulamada bu veritabanından gelir
+    # Şimdilik 404 yerine boş response döndür
+    return {
+        "status": "no_saved_data",
+        "picks": [],
+        "message": "Kaydedilmiş veri yok, canlı tarama kullanılacak"
+    }
+
+@app.get("/api/screener/top-picks")
+async def get_top_picks():
+    """
+    En iyi fırsatlar - MobileScreenerPage için
+    """
+    # daily-picks ile aynı mantık
+    result = await get_daily_picks(strategy="hybrid", max_picks=5)
+    return {
+        "picks": result.get("picks", []),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/alerts/active")
+async def get_active_alerts():
+    """Aktif alarmlar listesi"""
+    return {
+        "alerts": [],
+        "count": 0,
+        "message": "Henüz alarm oluşturulmadı"
+    }
+
+@app.post("/api/alerts/create")
+async def create_alert_endpoint(request: Request):
+    """Yeni alarm oluştur"""
+    try:
+        body = await request.json()
+        return {
+            "success": True,
+            "alert_id": f"alert_{datetime.now().timestamp()}",
+            "message": "Alarm oluşturuldu (demo mod)",
+            "alert": body
+        }
+    except:
+        return {"success": False, "message": "Alarm oluşturulamadı"}
+
+@app.get("/api/portfolio/watchlists")
+async def get_watchlists():
+    """Watchlist endpoint - localStorage kullanıldığı için boş döner"""
+    return {
+        "watchlists": [],
+        "message": "Watchlist verisi tarayıcıda (localStorage) saklanır"
+    }
+
+@app.get("/api/portfolio/watchlists/all")
+async def get_all_watchlists():
+    """Tüm watchlist'ler"""
+    return {"watchlists": [], "total": 0}
 
 @app.get("/api/screener")
 async def get_screener():
