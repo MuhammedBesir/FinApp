@@ -404,6 +404,15 @@ async def alerts_statistics():
         "by_type": {}
     }
 
+@app.get("/api/alerts/check")
+async def check_alerts():
+    """Stub: Check alerts"""
+    return {
+        "checked": 0,
+        "triggered": [],
+        "message": "No alerts to check"
+    }
+
 @app.get("/api/alerts")
 async def get_alerts():
     """Stub: Get alerts list"""
