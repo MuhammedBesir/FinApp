@@ -742,11 +742,11 @@ def get_mock_data(symbol: str) -> dict:
 # ========== Stock Data Endpoints (Yahoo Finance via requests) ==========
 import httpx
 
-async def fetch_yahoo_quote(symbol: str) -> dict:
+async def fetch_yahoo_quote(symbol: str, period: str = "3mo") -> dict:
     """Fetch stock quote from Yahoo Finance API with mock fallback"""
     try:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        params = {"interval": "1d", "range": "1mo"}
+        params = {"interval": "1d", "range": period}  # 3 ay veri - EMA50 için yeterli
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -821,13 +821,15 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
                 "candles": [
                     {
                         "timestamp": timestamps[i] if i < len(timestamps) else None,
-                        "open": valid_opens[i] if i < len(valid_opens) else None,
-                        "high": valid_highs[i] if i < len(valid_highs) else None,
-                        "low": valid_lows[i] if i < len(valid_lows) else None,
-                        "close": valid_closes[i] if i < len(valid_closes) else None,
-                        "volume": valid_volumes[i] if i < len(valid_volumes) else None,
+                        "date": datetime.fromtimestamp(timestamps[i]).strftime("%Y-%m-%d") if i < len(timestamps) and timestamps[i] else None,
+                        "open": opens[i] if i < len(opens) and opens[i] is not None else None,
+                        "high": highs[i] if i < len(highs) and highs[i] is not None else None,
+                        "low": lows[i] if i < len(lows) and lows[i] is not None else None,
+                        "close": closes[i] if i < len(closes) and closes[i] is not None else None,
+                        "volume": volumes[i] if i < len(volumes) and volumes[i] is not None else None,
                     }
-                    for i in range(len(valid_closes))
+                    for i in range(len(timestamps))
+                    if i < len(closes) and closes[i] is not None  # Sadece geçerli verileri al
                 ],
                 "isMockData": False
             }
