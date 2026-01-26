@@ -30,9 +30,9 @@ const MobileDailyPicksPage = () => {
   const fetchMorningPicks = async () => {
     try {
       setLoading(true);
-      // New Improved Strategy Endpoint
+      // Hybrid Strategy Endpoint - Desktop ile senkronize
       const response = await axios.get(
-        `/api/signals/daily-picks?strategy=moderate&max_picks=5`
+        `/api/signals/daily-picks?strategy=hybrid&max_picks=5`
       );
       
       const picks = response.data.picks || [];
@@ -42,15 +42,25 @@ const MobileDailyPicksPage = () => {
         score: Math.round(p.strength),
         recommendation: p.signal,
         signal: p.signal,
+        reasons: p.reasons || [],
+        sector: p.sector || 'BIST30',
+        exitStrategy: p.exit_strategy || {
+          tp1_action: "TP1'de %50 pozisyon kapat",
+          tp1_new_stop: "Break-even'a çek",
+          tp2_action: "TP2'de kalan %50 kapat"
+        },
         levels: {
             entry_price: p.entry_price,
             stop_loss: p.stop_loss,
-            take_profit: p.take_profit, // TP1 
-            take_profit_1: p.take_profit,
+            take_profit: p.take_profit_1, // TP1 
+            take_profit_1: p.take_profit_1,
             take_profit_2: p.take_profit_2,
-            risk_reward_ratio: p.risk_reward_ratio,
-            risk_pct: Math.abs((p.entry_price - p.stop_loss) / p.entry_price * 100),
-            reward_pct: Math.abs((p.take_profit - p.entry_price) / p.entry_price * 100),
+            risk_reward_ratio: p.risk_reward_ratio || 2.5,
+            risk_reward_2: p.risk_reward_2 || 4.0,
+            risk_pct: p.risk_pct || Math.abs((p.entry_price - p.stop_loss) / p.entry_price * 100),
+            reward_pct: p.reward_pct || Math.abs((p.take_profit_1 - p.entry_price) / p.entry_price * 100),
+            reward_pct_2: p.take_profit_2 ? Math.abs((p.take_profit_2 - p.entry_price) / p.entry_price * 100) : 0,
+            max_hold_days: 5,
         }
       }));
 
@@ -131,7 +141,7 @@ const MobileDailyPicksPage = () => {
           </div>
           <div>
             <h1 className="font-bold text-theme-text text-base">Günün Fırsatları</h1>
-            <p className="text-xs text-theme-muted">WR: %67.7 | PF: 2.88</p>
+            <p className="text-xs text-theme-muted">WR: %58.5 | PF: 1.66 | Hybrid V4</p>
           </div>
         </div>
         <button
@@ -280,7 +290,7 @@ const MobileDailyPicksPage = () => {
                       </p>
                     </div>
                     <div className="text-center p-2 rounded bg-success/10 border border-success/20">
-                      <p className="text-[10px] text-theme-muted uppercase">Hedef</p>
+                      <p className="text-[10px] text-theme-muted uppercase">TP1</p>
                       <p className="font-bold text-success">
                         ₺{(pick.levels?.take_profit_1 || pick.levels?.take_profit)?.toFixed(2) || '—'}
                       </p>
@@ -293,14 +303,64 @@ const MobileDailyPicksPage = () => {
                     </div>
                   </div>
 
-                  {/* R:R Ratio */}
-                  {pick.levels?.risk_reward_ratio && (
-                    <div className="flex items-center justify-center mt-2 text-xs">
-                      <span className="px-2 py-1 rounded bg-primary-500/10 text-primary font-medium">
-                        R:R 1:{pick.levels.risk_reward_ratio?.toFixed(1)}
-                      </span>
+                  {/* TP2 Hedefi */}
+                  {pick.levels?.take_profit_2 && (
+                    <div className="mt-2 p-2 rounded bg-primary-500/10 border border-primary-500/20">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-theme-muted">TP2 Hedef</span>
+                        <span className="font-bold text-primary">
+                          ₺{pick.levels.take_profit_2?.toFixed(2)} (+%{pick.levels.reward_pct_2?.toFixed(1)})
+                        </span>
+                      </div>
                     </div>
                   )}
+
+                  {/* R:R Ratio */}
+                  <div className="flex items-center justify-center gap-2 mt-2 text-xs">
+                    {pick.levels?.risk_reward_ratio && (
+                      <span className="px-2 py-1 rounded bg-primary-500/10 text-primary font-medium">
+                        TP1 R:R 1:{pick.levels.risk_reward_ratio?.toFixed(1)}
+                      </span>
+                    )}
+                    {pick.levels?.risk_reward_2 && (
+                      <span className="px-2 py-1 rounded bg-success/10 text-success font-medium">
+                        TP2 R:R 1:{pick.levels.risk_reward_2?.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Exit Strategy */}
+                  {pick.exitStrategy && (
+                    <div className="mt-2 p-2 rounded bg-theme-card/50 border border-[var(--glass-border)]">
+                      <p className="text-[10px] text-theme-muted mb-1 font-semibold">📋 Çıkış Stratejisi</p>
+                      <div className="space-y-0.5 text-[10px]">
+                        <p className="text-success">✓ {pick.exitStrategy.tp1_action}</p>
+                        <p className="text-primary">✓ {pick.exitStrategy.tp1_new_stop}</p>
+                        <p className="text-warning">✓ {pick.exitStrategy.tp2_action}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Reasons/Signals */}
+                  {pick.reasons && pick.reasons.length > 0 && (
+                    <div className="mt-2 p-2 rounded bg-theme-card/30">
+                      <p className="text-[10px] text-theme-muted mb-1 font-semibold">📊 Sinyal Nedenleri</p>
+                      <div className="flex flex-wrap gap-1">
+                        {pick.reasons.slice(0, 3).map((reason, idx) => (
+                          <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-primary-500/10 text-primary-400">
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Max Hold Days */}
+                  <div className="flex items-center justify-center mt-2">
+                    <span className="text-[10px] text-theme-muted">
+                      ⏱️ Max tutma: {pick.levels?.max_hold_days || 5} gün
+                    </span>
+                  </div>
                 </div>
               ))
             )}

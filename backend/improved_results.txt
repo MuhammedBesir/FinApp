@@ -1,0 +1,80 @@
+======================================================================
+🚀 İYİLEŞTİRİLMİŞ STRATEJİ BACKTEST
+======================================================================
+🎯 Trailing Stop: AÇIK
+📈 Market Filter: AÇIK
+🏢 Sektör Limiti: 2/sektör
+======================================================================
+📥 Veri indiriliyor...
+  ✅ GARAN.IS: 276 gün
+  ✅ AKBNK.IS: 276 gün
+  ✅ YKBNK.IS: 276 gün
+  ✅ VAKBN.IS: 276 gün
+  ✅ ISCTR.IS: 276 gün
+  ✅ KCHOL.IS: 276 gün
+  ✅ SAHOL.IS: 276 gün
+  ✅ EREGL.IS: 276 gün
+  ✅ ASELS.IS: 276 gün
+  ✅ TOASO.IS: 276 gün
+  ✅ FROTO.IS: 276 gün
+  ✅ AKSEN.IS: 276 gün
+  ✅ TUPRS.IS: 276 gün
+  ✅ ENKAI.IS: 276 gün
+  ✅ BIMAS.IS: 276 gün
+  ✅ SISE.IS: 276 gün
+  ✅ TCELL.IS: 276 gün
+  ✅ TAVHL.IS: 276 gün
+  ✅ EKGYO.IS: 276 gün
+  ✅ GUBRF.IS: 276 gün
+  ✅ THYAO.IS: 276 gün
+  ✅ XU030.IS: 273 gün (Market Filter)
+✅ 21 hisse yüklendi
+🔄 Backtest: 186 -> 275 (90 gün)
+
+======================================================================
+📊 BACKTEST SONUÇLARI
+======================================================================
+📈 GENEL İSTATİSTİKLER:
+   Toplam Trade: 212
+   ✅ Kazançlı: 96 (45.3%)
+   ❌ Kayıplı: 116
+
+🎯 ÇIKIŞ TİPLERİ:
+   TRAIL: 86 (40.6%)
+   TIME_WIN: 50 (23.6%)
+   TIME_LOSS: 44 (20.8%)
+   STOP: 16 (7.5%)
+   OPEN_WIN: 9 (4.2%)
+   OPEN_LOSS: 5 (2.4%)
+   TP1: 2 (0.9%)
+
+💰 PERFORMANS:
+   Ort. Kazanç: +2.69%
+   Ort. Kayıp: -1.82%
+   Toplam PnL: +46.77%
+   Profit Factor: 1.22
+
+🛡️ FİLTRE ETKİSİ:
+   Market Filter atlanan: 23 gün
+   Sektör limiti atlanan: 10
+   Trailing Stop tetiklenen: 86
+
+📋 HİSSE BAZLI (Top 10):
+   🟢 AKBNK.IS: 9 trade, WR: 78%, PnL: +14.1%
+   🟢 TUPRS.IS: 11 trade, WR: 55%, PnL: +12.9%
+   🟢 ENKAI.IS: 11 trade, WR: 55%, PnL: +12.4%
+   🟢 TAVHL.IS: 13 trade, WR: 54%, PnL: +12.1%
+   🟢 BIMAS.IS: 16 trade, WR: 50%, PnL: +11.7%
+   🟢 ISCTR.IS: 8 trade, WR: 50%, PnL: +10.6%
+   🟢 TCELL.IS: 7 trade, WR: 57%, PnL: +6.8%
+   🟢 AKSEN.IS: 14 trade, WR: 57%, PnL: +6.0%
+   🟢 VAKBN.IS: 8 trade, WR: 38%, PnL: +5.0%
+   🟢 ASELS.IS: 6 trade, WR: 33%, PnL: +3.4%
+
+======================================================================
+📌 ÖZET DEĞERLENDİRME:
+   ⚠️ Strateji geliştirilebilir
+   Win Rate: 45.3%
+   Profit Factor: 1.22
+   Toplam Getiri: +46.77%
+======================================================================
