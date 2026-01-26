@@ -391,6 +391,232 @@ async def get_knowledge(topic: str):
     
     raise HTTPException(status_code=404, detail="Topic not found")
 
+# ========== Auth Endpoints (Stub - LocalStorage Based) ==========
+# Simple auth that stores data in memory (resets on cold start)
+# For production, use a real database
+
+import hashlib
+import secrets
+
+# In-memory user storage (for demo purposes)
+users_db: Dict[str, dict] = {}
+tokens_db: Dict[str, str] = {}  # token -> email mapping
+
+class RegisterRequest(BaseModel):
+    full_name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+    remember_me: bool = False
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def generate_token() -> str:
+    return secrets.token_urlsafe(32)
+
+@app.post("/api/auth/register")
+async def register(request: RegisterRequest):
+    """Register new user"""
+    email = request.email.lower().strip()
+    
+    if email in users_db:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    if len(request.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    # Create user
+    user_id = f"user_{len(users_db) + 1}"
+    users_db[email] = {
+        "id": user_id,
+        "email": email,
+        "full_name": request.full_name,
+        "password_hash": hash_password(request.password),
+        "created_at": datetime.now().isoformat()
+    }
+    
+    # Generate token
+    token = generate_token()
+    tokens_db[token] = email
+    
+    return {
+        "success": True,
+        "message": "Registration successful",
+        "data": {
+            "access_token": token,
+            "refresh_token": generate_token(),
+            "user": {
+                "id": user_id,
+                "email": email,
+                "full_name": request.full_name
+            }
+        }
+    }
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    """Login user"""
+    email = request.email.lower().strip()
+    
+    if email not in users_db:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    user = users_db[email]
+    if user["password_hash"] != hash_password(request.password):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # Generate new token
+    token = generate_token()
+    tokens_db[token] = email
+    
+    return {
+        "success": True,
+        "message": "Login successful",
+        "data": {
+            "access_token": token,
+            "refresh_token": generate_token(),
+            "user": {
+                "id": user["id"],
+                "email": user["email"],
+                "full_name": user["full_name"]
+            }
+        }
+    }
+
+@app.post("/api/auth/logout")
+async def logout(request: Request):
+    """Logout user"""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        tokens_db.pop(token, None)
+    
+    return {"success": True, "message": "Logged out successfully"}
+
+@app.get("/api/auth/verify")
+async def verify_token(request: Request):
+    """Verify token"""
+    auth_header = request.headers.get("Authorization", "")
+    
+    if not auth_header.startswith("Bearer "):
+        return {"success": False, "message": "No token provided"}
+    
+    token = auth_header[7:]
+    email = tokens_db.get(token)
+    
+    if not email or email not in users_db:
+        return {"success": False, "message": "Invalid token"}
+    
+    user = users_db[email]
+    return {
+        "success": True,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "full_name": user["full_name"]
+        }
+    }
+
+@app.post("/api/auth/refresh")
+async def refresh_token(request: Request):
+    """Refresh token"""
+    # For simplicity, just generate a new token
+    token = generate_token()
+    return {
+        "success": True,
+        "data": {
+            "access_token": token
+        }
+    }
+
+@app.get("/api/auth/me")
+async def get_me(request: Request):
+    """Get current user"""
+    auth_header = request.headers.get("Authorization", "")
+    
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = auth_header[7:]
+    email = tokens_db.get(token)
+    
+    if not email or email not in users_db:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user = users_db[email]
+    return {
+        "success": True,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "full_name": user["full_name"]
+        }
+    }
+
+@app.put("/api/auth/me")
+async def update_me(request: Request):
+    """Update current user"""
+    auth_header = request.headers.get("Authorization", "")
+    
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = auth_header[7:]
+    email = tokens_db.get(token)
+    
+    if not email or email not in users_db:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    body = await request.json()
+    user = users_db[email]
+    
+    if "full_name" in body:
+        user["full_name"] = body["full_name"]
+    
+    return {
+        "success": True,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "full_name": user["full_name"]
+        }
+    }
+
+@app.post("/api/auth/change-password")
+async def change_password(request: Request):
+    """Change password"""
+    auth_header = request.headers.get("Authorization", "")
+    
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = auth_header[7:]
+    email = tokens_db.get(token)
+    
+    if not email or email not in users_db:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    body = await request.json()
+    user = users_db[email]
+    
+    if user["password_hash"] != hash_password(body.get("current_password", "")):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    if len(body.get("new_password", "")) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    
+    user["password_hash"] = hash_password(body["new_password"])
+    
+    return {"success": True, "message": "Password changed successfully"}
+
 # ========== Stub Endpoints (Frontend compatibility) ==========
 # These return empty/mock data since heavy dependencies are removed
 
