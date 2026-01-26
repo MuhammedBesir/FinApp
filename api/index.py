@@ -793,9 +793,16 @@ async def fetch_yahoo_quote(symbol: str) -> dict:
                 return get_mock_data(symbol)
             
             current_price = valid_closes[-1]
-            prev_close = meta.get("previousClose", current_price)
-            change = current_price - prev_close if prev_close else 0
-            change_percent = (change / prev_close * 100) if prev_close else 0
+            # Calculate change from previous day's close
+            prev_close = meta.get("previousClose")
+            # If no previousClose in meta, use second to last close
+            if not prev_close and len(valid_closes) >= 2:
+                prev_close = valid_closes[-2]
+            if not prev_close:
+                prev_close = current_price
+            
+            change = current_price - prev_close
+            change_percent = (change / prev_close * 100) if prev_close and prev_close != 0 else 0
             
             return {
                 "symbol": symbol,
@@ -908,7 +915,7 @@ async def get_stock_info(symbol: str):
 
 @app.get("/api/stocks/{symbol}/indicators")
 async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = "1mo"):
-    """Get basic indicators (simplified without pandas/numpy)"""
+    """Get comprehensive technical indicators"""
     if not symbol.endswith(".IS") and not "." in symbol:
         symbol = f"{symbol}.IS"
     
@@ -919,9 +926,14 @@ async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = 
     
     candles = data.get("candles", [])
     closes = [c["close"] for c in candles if c.get("close")]
+    highs = [c["high"] for c in candles if c.get("high")]
+    lows = [c["low"] for c in candles if c.get("low")]
+    volumes = [c["volume"] for c in candles if c.get("volume")]
     
-    # Simple RSI calculation (14 period)
-    rsi = 50  # Default neutral
+    current_price = data["price"]
+    
+    # RSI (14 period)
+    rsi = 50
     if len(closes) >= 15:
         gains = []
         losses = []
@@ -933,24 +945,122 @@ async def get_stock_indicators(symbol: str, interval: str = "1d", period: str = 
             else:
                 gains.append(0)
                 losses.append(abs(diff))
-        
         avg_gain = sum(gains) / 14 if gains else 0
         avg_loss = sum(losses) / 14 if losses else 0.0001
         rs = avg_gain / avg_loss if avg_loss else 100
         rsi = 100 - (100 / (1 + rs))
     
-    # Simple moving averages
+    # EMA calculation helper
+    def calc_ema(data, period):
+        if len(data) < period:
+            return sum(data) / len(data) if data else 0
+        multiplier = 2 / (period + 1)
+        ema = sum(data[:period]) / period
+        for price in data[period:]:
+            ema = (price * multiplier) + (ema * (1 - multiplier))
+        return ema
+    
+    # Moving averages
     sma_20 = sum(closes[-20:]) / min(20, len(closes)) if closes else 0
     sma_50 = sum(closes[-50:]) / min(50, len(closes)) if closes else 0
+    ema_9 = calc_ema(closes, 9) if len(closes) >= 9 else (sum(closes) / len(closes) if closes else 0)
+    ema_21 = calc_ema(closes, 21) if len(closes) >= 21 else sma_20
+    ema_50 = calc_ema(closes, 50) if len(closes) >= 50 else sma_50
+    
+    # MACD (12, 26, 9)
+    ema_12 = calc_ema(closes, 12) if len(closes) >= 12 else 0
+    ema_26 = calc_ema(closes, 26) if len(closes) >= 26 else 0
+    macd_line = ema_12 - ema_26
+    macd_signal = calc_ema([macd_line], 9)  # Simplified
+    macd_histogram = macd_line - macd_signal
+    
+    # ATR (14 period)
+    atr = 0
+    if len(closes) >= 2 and len(highs) >= 1 and len(lows) >= 1:
+        tr_list = []
+        for i in range(1, min(15, len(closes))):
+            tr1 = highs[i] - lows[i] if i < len(highs) and i < len(lows) else 0
+            tr2 = abs(highs[i] - closes[i-1]) if i < len(highs) else 0
+            tr3 = abs(lows[i] - closes[i-1]) if i < len(lows) else 0
+            tr_list.append(max(tr1, tr2, tr3))
+        atr = sum(tr_list) / len(tr_list) if tr_list else 0
+    
+    # Volume analysis
+    avg_volume = sum(volumes[-20:]) / min(20, len(volumes)) if volumes else 0
+    current_volume = volumes[-1] if volumes else 0
+    volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+    
+    # Bollinger Bands (20, 2)
+    bb_middle = sma_20
+    bb_std = 0
+    if len(closes) >= 20:
+        mean = sum(closes[-20:]) / 20
+        variance = sum((x - mean) ** 2 for x in closes[-20:]) / 20
+        bb_std = variance ** 0.5
+    bb_upper = bb_middle + (2 * bb_std)
+    bb_lower = bb_middle - (2 * bb_std)
+    
+    # Trend strength
+    trend_direction = "bullish" if current_price > ema_21 > ema_50 else ("bearish" if current_price < ema_21 < ema_50 else "sideways")
+    
+    # Signal strength score (0-100)
+    score = 50  # Start neutral
+    if current_price > ema_9: score += 10
+    if current_price > ema_21: score += 10
+    if ema_9 > ema_21: score += 10
+    if ema_21 > ema_50: score += 10
+    if 35 <= rsi <= 65: score += 10  # Not overbought/oversold
+    if volume_ratio > 1: score += 5
+    if macd_line > macd_signal: score += 5
     
     return {
         "symbol": symbol,
-        "rsi": round(rsi, 2),
-        "sma_20": round(sma_20, 2),
-        "sma_50": round(sma_50, 2),
-        "price": data["price"],
-        "trend": "bullish" if data["price"] > sma_20 else "bearish",
-        "rsi_signal": "oversold" if rsi < 30 else ("overbought" if rsi > 70 else "neutral")
+        "price": round(current_price, 2),
+        "timestamp": datetime.now().isoformat(),
+        
+        # Trend indicators
+        "trend": {
+            "ema_9": round(ema_9, 2),
+            "ema_21": round(ema_21, 2),
+            "ema_50": round(ema_50, 2),
+            "sma_20": round(sma_20, 2),
+            "sma_50": round(sma_50, 2),
+            "direction": trend_direction
+        },
+        
+        # Momentum indicators
+        "momentum": {
+            "rsi": round(rsi, 2),
+            "rsi_signal": "oversold" if rsi < 30 else ("overbought" if rsi > 70 else "neutral"),
+            "macd": round(macd_line, 4),
+            "macd_signal": round(macd_signal, 4),
+            "macd_histogram": round(macd_histogram, 4)
+        },
+        
+        # Volatility indicators
+        "volatility": {
+            "atr": round(atr, 2),
+            "atr_percent": round((atr / current_price * 100), 2) if current_price > 0 else 0,
+            "bb_upper": round(bb_upper, 2),
+            "bb_middle": round(bb_middle, 2),
+            "bb_lower": round(bb_lower, 2)
+        },
+        
+        # Volume analysis
+        "volume": {
+            "current": current_volume,
+            "average": round(avg_volume, 0),
+            "ratio": round(volume_ratio, 2),
+            "signal": "high" if volume_ratio > 1.5 else ("normal" if volume_ratio > 0.7 else "low")
+        },
+        
+        # Overall analysis
+        "analysis": {
+            "score": min(100, max(0, score)),
+            "signal": "strong_buy" if score >= 80 else ("buy" if score >= 65 else ("hold" if score >= 45 else ("sell" if score >= 30 else "strong_sell"))),
+            "support": round(bb_lower, 2),
+            "resistance": round(bb_upper, 2)
+        }
     }
 
 @app.get("/api/signals/{symbol}")
@@ -1176,7 +1286,7 @@ async def get_ipo():
 
 @app.get("/api/market/all")
 async def get_market_all():
-    """Get all market data for BIST30"""
+    """Get all market data for BIST30 with calculated changes"""
     BIST30 = [
         'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
         'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
@@ -1185,25 +1295,107 @@ async def get_market_all():
     ]
     
     stocks = []
-    for symbol in BIST30[:15]:  # İlk 15 hisse (hız için)
+    total_change = 0
+    total_volume = 0
+    
+    for symbol in BIST30:
         try:
             data = await fetch_yahoo_quote(symbol)
             if data:
-                stocks.append({
+                # Calculate change properly from candles if needed
+                change_pct = data.get("changePercent", 0)
+                if change_pct == 0 and data.get("candles") and len(data["candles"]) >= 2:
+                    candles = data["candles"]
+                    closes = [c["close"] for c in candles if c.get("close")]
+                    if len(closes) >= 2 and closes[-2] and closes[-2] != 0:
+                        change_pct = ((closes[-1] - closes[-2]) / closes[-2]) * 100
+                
+                stock_data = {
                     "symbol": symbol,
                     "name": data.get("name", symbol),
                     "price": data.get("price", 0),
                     "change": data.get("change", 0),
-                    "changePercent": data.get("changePercent", 0),
-                    "volume": data.get("volume", 0)
-                })
+                    "changePercent": round(change_pct, 2),
+                    "volume": data.get("volume", 0),
+                    "high": data.get("high", 0),
+                    "low": data.get("low", 0),
+                    "open": data.get("open", 0)
+                }
+                stocks.append(stock_data)
+                total_change += change_pct
+                total_volume += data.get("volume", 0)
         except:
             continue
+    
+    # Market summary
+    advancing = len([s for s in stocks if s["changePercent"] > 0])
+    declining = len([s for s in stocks if s["changePercent"] < 0])
+    unchanged = len([s for s in stocks if s["changePercent"] == 0])
+    avg_change = total_change / len(stocks) if stocks else 0
     
     return {
         "stocks": stocks,
         "count": len(stocks),
+        "summary": {
+            "advancing": advancing,
+            "declining": declining,
+            "unchanged": unchanged,
+            "avgChange": round(avg_change, 2),
+            "totalVolume": total_volume,
+            "marketTrend": "bullish" if avg_change > 0.5 else ("bearish" if avg_change < -0.5 else "sideways")
+        },
         "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/market-status")
+async def get_market_status():
+    """Get current market status"""
+    now = datetime.now()
+    hour = now.hour
+    minute = now.minute
+    weekday = now.weekday()
+    
+    # BIST market hours: 10:00 - 18:00, Mon-Fri
+    is_weekday = weekday < 5  # Monday = 0, Friday = 4
+    
+    # Market open at 10:00, close at 18:00
+    market_open_time = (10, 0)
+    market_close_time = (18, 0)
+    
+    current_minutes = hour * 60 + minute
+    open_minutes = market_open_time[0] * 60 + market_open_time[1]
+    close_minutes = market_close_time[0] * 60 + market_close_time[1]
+    
+    is_market_hours = open_minutes <= current_minutes < close_minutes
+    is_open = is_weekday and is_market_hours
+    
+    # Determine session
+    if not is_weekday:
+        session = "weekend"
+        status_msg = "Piyasa kapalı - Hafta sonu"
+    elif current_minutes < open_minutes:
+        session = "pre-market"
+        status_msg = f"Piyasa açılışına {open_minutes - current_minutes} dakika"
+    elif current_minutes >= close_minutes:
+        session = "after-hours"
+        status_msg = "Piyasa kapalı - Mesai sonrası"
+    else:
+        session = "regular"
+        remaining = close_minutes - current_minutes
+        status_msg = f"Piyasa açık - Kapanışa {remaining} dakika"
+    
+    return {
+        "isOpen": is_open,
+        "session": session,
+        "message": status_msg,
+        "exchange": "BIST",
+        "timezone": "Europe/Istanbul",
+        "currentTime": now.isoformat(),
+        "marketHours": {
+            "open": "10:00",
+            "close": "18:00"
+        },
+        "nextOpen": "Pazartesi 10:00" if weekday >= 5 else ("Yarın 10:00" if not is_market_hours else None)
     }
 
 @app.get("/api/screener/top-movers")
@@ -1212,21 +1404,35 @@ async def get_top_movers(top_n: int = 5):
     BIST30 = [
         'THYAO.IS', 'GARAN.IS', 'AKBNK.IS', 'YKBNK.IS', 'EREGL.IS',
         'BIMAS.IS', 'ASELS.IS', 'KCHOL.IS', 'SAHOL.IS', 'SISE.IS',
-        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS'
+        'TCELL.IS', 'TUPRS.IS', 'PGSUS.IS', 'TAVHL.IS', 'ENKAI.IS',
+        'FROTO.IS', 'TOASO.IS', 'EKGYO.IS', 'GUBRF.IS', 'AKSEN.IS'
     ]
     
     stocks = []
     for symbol in BIST30:
         try:
             data = await fetch_yahoo_quote(symbol)
-            if data and not data.get("isMockData"):
+            if data:
+                # Calculate change if not already calculated
+                change_pct = data.get("changePercent", 0)
+                # Double check with candles if change is 0
+                if change_pct == 0 and data.get("candles") and len(data["candles"]) >= 2:
+                    candles = data["candles"]
+                    closes = [c["close"] for c in candles if c.get("close")]
+                    if len(closes) >= 2:
+                        prev = closes[-2]
+                        curr = closes[-1]
+                        if prev and prev != 0:
+                            change_pct = ((curr - prev) / prev) * 100
+                
                 stocks.append({
                     "symbol": symbol,
                     "name": data.get("name", symbol),
                     "price": data.get("price", 0),
                     "change": data.get("change", 0),
-                    "changePercent": data.get("changePercent", 0),
-                    "volume": data.get("volume", 0)
+                    "changePercent": round(change_pct, 2),
+                    "volume": data.get("volume", 0),
+                    "isMockData": data.get("isMockData", False)
                 })
         except:
             continue
@@ -1235,7 +1441,7 @@ async def get_top_movers(top_n: int = 5):
     stocks.sort(key=lambda x: x["changePercent"], reverse=True)
     
     gainers = stocks[:top_n]
-    losers = stocks[-top_n:][::-1]  # Reverse to show biggest losers first
+    losers = sorted(stocks, key=lambda x: x["changePercent"])[:top_n]  # Lowest first for losers
     
     return {
         "gainers": gainers,
