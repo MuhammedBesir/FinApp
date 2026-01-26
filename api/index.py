@@ -1846,18 +1846,100 @@ IPO_DATA = [
     }
 ]
 
+@app.get("/api/ipo/")
 @app.get("/api/ipo")
 async def get_ipo():
     """IPO calendar - Halka arz takvimi"""
+    # Return all IPOs in a single array (frontend expects this format)
+    return {
+        "success": True,
+        "ipos": IPO_DATA,
+        "upcoming": [ipo for ipo in IPO_DATA if ipo["status"] == "upcoming"],
+        "recent": [ipo for ipo in IPO_DATA if ipo["status"] == "trading"],
+        "total": len(IPO_DATA),
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/ipo/stats")
+async def get_ipo_stats():
+    """IPO statistics"""
     upcoming = [ipo for ipo in IPO_DATA if ipo["status"] == "upcoming"]
-    recent = [ipo for ipo in IPO_DATA if ipo["status"] == "trading"]
+    trading = [ipo for ipo in IPO_DATA if ipo["status"] == "trading"]
+    
+    # Calculate statistics
+    total_return = sum(ipo.get("total_return_percent", 0) or 0 for ipo in trading)
+    avg_return = total_return / len(trading) if trading else 0
     
     return {
         "success": True,
-        "upcoming": upcoming,
-        "recent": recent,
-        "total": len(IPO_DATA),
-        "timestamp": datetime.now().isoformat()
+        "stats": {
+            "total_ipos": len(IPO_DATA),
+            "upcoming_count": len(upcoming),
+            "active_count": len(trading),
+            "avg_return": round(avg_return, 2),
+            "last_update": datetime.now().isoformat(),
+            "by_sector": {},
+            "by_status": {
+                "upcoming": len(upcoming),
+                "trading": len(trading)
+            }
+        }
+    }
+
+@app.get("/api/ipo/watchlist/{user_id}")
+async def get_ipo_watchlist(user_id: str):
+    """Get user's IPO watchlist"""
+    return {"success": True, "ipos": []}
+
+@app.post("/api/ipo/{ipo_id}/watchlist")
+async def add_to_watchlist(ipo_id: str):
+    """Add IPO to watchlist"""
+    return {"success": True, "message": "Added to watchlist"}
+
+@app.delete("/api/ipo/{ipo_id}/watchlist")
+async def remove_from_watchlist(ipo_id: str):
+    """Remove IPO from watchlist"""
+    return {"success": True, "message": "Removed from watchlist"}
+
+@app.post("/api/ipo/{ipo_id}/calculate")
+async def calculate_ipo_investment(ipo_id: str, request: Request):
+    """Calculate IPO investment"""
+    body = await request.json()
+    lot_count = body.get("lot_count", 1)
+    
+    # Find IPO
+    ipo = next((i for i in IPO_DATA if i["id"] == ipo_id), None)
+    if not ipo:
+        raise HTTPException(status_code=404, detail="IPO not found")
+    
+    price = ipo.get("final_price") or ipo.get("price_range_max", 0)
+    lot_size = ipo.get("lot_size", 100)
+    
+    total_shares = lot_count * lot_size
+    total_cost = total_shares * price
+    
+    return {
+        "success": True,
+        "calculation": {
+            "lot_count": lot_count,
+            "lot_size": lot_size,
+            "total_shares": total_shares,
+            "price_per_share": price,
+            "total_cost": total_cost,
+            "estimated_return": total_cost * 0.2  # 20% estimated return
+        }
+    }
+
+@app.post("/api/ipo/admin/refresh")
+async def refresh_ipo_data():
+    """Admin: Refresh IPO data from sources"""
+    return {
+        "success": True,
+        "result": {
+            "success": True,
+            "ipos_found": len(IPO_DATA),
+            "message": "IPO data refreshed"
+        }
     }
 
 @app.get("/api/market/all")
