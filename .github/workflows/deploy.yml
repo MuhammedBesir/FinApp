@@ -1,0 +1,39 @@
+# Auto-deploy to Vercel on every push to main
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+  # Scheduled re-deploy every 6 hours to keep deployment fresh
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        run: |
+          npm i -g vercel@latest
+          vercel --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Health Check
+        run: |
+          sleep 10
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://trading-botu.vercel.app/api/health")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "⚠️ Health check failed (attempt $i, status=$STATUS), retrying..."
+            sleep 5
+          done
+          echo "❌ Health check failed after 3 attempts"
+          exit 1

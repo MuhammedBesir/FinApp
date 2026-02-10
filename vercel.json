@@ -27,5 +27,11 @@
       "dest": "frontend/$1" 
     },
     { "src": "/(.*)", "dest": "frontend/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/health",
+      "schedule": "0 8 * * *"
+    }
   ]
 }
